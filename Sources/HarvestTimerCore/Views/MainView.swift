@@ -8,8 +8,7 @@ struct MainView: View {
         @Bindable var state = state
         VStack(spacing: 0) {
             WeekHeader(showingSettings: $showingSettings)
-            Divider()
-            FavoritesGrid()
+                .zIndex(1)
             Divider()
             HSplitView {
                 EntryList()
@@ -51,8 +50,9 @@ struct ErrorBanner: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
+            .pointingCursor()
         }
-        .padding(10)
+        .padding(8)
         .background(.yellow.opacity(0.12))
     }
 }

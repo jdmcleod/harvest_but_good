@@ -1,47 +1,32 @@
 import SwiftUI
 
-struct FavoritesGrid: View {
+struct FavoriteChips: View {
     @Environment(AppState.self) private var state
     @State private var showingAddSheet = false
 
-    private let columns = [GridItem(.adaptive(minimum: 170, maximum: 240), spacing: 10)]
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Favorites")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    showingAddSheet = true
-                } label: {
-                    Label("Add", systemImage: "plus")
-                }
-                .controlSize(.small)
+        HStack(spacing: 4) {
+            ForEach(state.favorites) { favorite in
+                FavoriteChip(favorite: favorite)
             }
-            if state.favorites.isEmpty {
-                Text("No favorites yet. Add a project + task to start timers with one click.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
-            } else {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                    ForEach(state.favorites) { favorite in
-                        FavoriteCard(favorite: favorite)
-                    }
-                }
+            Button {
+                showingAddSheet = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white.opacity(0.7))
             }
+            .buttonStyle(.plain)
+            .pointingCursor()
+            .help("Add favorite")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
         .sheet(isPresented: $showingAddSheet) {
             AddFavoriteSheet()
         }
     }
 }
 
-private struct FavoriteCard: View {
+private struct FavoriteChip: View {
     @Environment(AppState.self) private var state
     let favorite: Favorite
     @State private var hovering = false
@@ -51,52 +36,54 @@ private struct FavoriteCard: View {
         return running.project.id == favorite.projectId && running.task.id == favorite.taskId
     }
 
+    private var displayName: String {
+        let name = favorite.projectName
+        if let separator = name.range(of: #"\s*[–—]\s*|\s+-\s+"#, options: .regularExpression) {
+            let stripped = name[separator.upperBound...].trimmingCharacters(in: .whitespaces)
+            if !stripped.isEmpty { return stripped }
+        }
+        return name
+    }
+
     var body: some View {
         Button {
             Task { await state.startFavorite(favorite) }
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(favorite.clientName)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text(favorite.projectName)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
-                Text(favorite.taskName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(projectColor(favorite.projectId).opacity(isRunning ? 0.25 : 0.1))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(
-                        projectColor(favorite.projectId).opacity(isRunning ? 0.9 : 0.35),
-                        lineWidth: isRunning ? 2 : 1
-                    )
-            )
+            Text(displayName.uppercased().prefix(6))
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .rotationEffect(.degrees(90))
+                .fixedSize()
+                .foregroundStyle(isRunning ? .white : projectColor(favorite.projectId))
+                .frame(width: 14, height: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isRunning ? projectColor(favorite.projectId).opacity(0.9) : Color.white.opacity(0.9))
+                )
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .topTrailing) {
+        .pointingCursor()
+        .overlay(alignment: .bottom) {
             if hovering {
-                Button {
-                    state.removeFavorite(favorite)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .background(Circle().fill(.background))
-                }
-                .buttonStyle(.plain)
-                .offset(x: 6, y: -6)
-                .help("Remove favorite")
+                Text("\(favorite.projectName) · \(favorite.taskName)")
+                    .font(.caption)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(.quaternary)
+                    )
+                    .fixedSize()
+                    .offset(y: 30)
+                    .allowsHitTesting(false)
             }
         }
         .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Remove Favorite", systemImage: "trash", role: .destructive) {
+                state.removeFavorite(favorite)
+            }
+        }
     }
 }

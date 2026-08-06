@@ -163,19 +163,23 @@ public final class AppState {
     }
 
     func startFavorite(_ favorite: Favorite) async {
+        await startTimer(projectId: favorite.projectId, taskId: favorite.taskId)
+    }
+
+    func startTimer(projectId: Int64, taskId: Int64) async {
         guard let api else { return }
         let today = dayString(.now)
         do {
             recordStopForRunningEntry()
             let entry: TimeEntry
             if let existing = entries(forDay: .now).first(where: {
-                $0.project.id == favorite.projectId && $0.task.id == favorite.taskId
+                $0.project.id == projectId && $0.task.id == taskId
             }) {
                 entry = try await api.restart(entryId: existing.id)
             } else {
                 entry = try await api.startTimer(
-                    projectId: favorite.projectId,
-                    taskId: favorite.taskId,
+                    projectId: projectId,
+                    taskId: taskId,
                     spentDate: today
                 )
             }
