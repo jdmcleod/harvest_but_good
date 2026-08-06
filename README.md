@@ -20,6 +20,9 @@ Harvest honestly has no excuse for how unusable their Mac app is. It's a web pag
 
 So here's the app Harvest should have shipped.
 
+<img src="Resources/screenshot.png" alt="Harvest But Good main window showing favorites, the day's time entries, and a color-coded timeline">
+
+
 ## What you get
 
 - **Menu bar first.** No Dock icon, no window clutter. Today's total hours sit right next to a tidy timer icon.
