@@ -46,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         hasRestoredFrame = window.setFrameUsingName("HarvestTimerMain")
         window.setFrameAutosaveName("HarvestTimerMain")
+
+        state.onAFKDetected = { [weak self] in self?.showWindow() }
+        showWindow()
     }
 
     private func toggleWindow() {
@@ -53,11 +56,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.orderOut(nil)
             return
         }
+        Task { await state.sync() }
+        showWindow()
+    }
+
+    private func showWindow() {
         if !hasRestoredFrame {
             positionUnderStatusItem()
             hasRestoredFrame = true
         }
-        Task { await state.sync() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

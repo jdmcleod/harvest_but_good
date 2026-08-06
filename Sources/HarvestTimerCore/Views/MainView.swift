@@ -5,6 +5,7 @@ struct MainView: View {
     @State private var showingSettings = false
 
     var body: some View {
+        @Bindable var state = state
         VStack(spacing: 0) {
             WeekHeader(showingSettings: $showingSettings)
             Divider()
@@ -22,6 +23,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SetupView(isSheet: true)
+        }
+        .sheet(item: $state.afkPrompt) { prompt in
+            AFKPromptView(prompt: prompt)
         }
         .task {
             await state.sync()

@@ -15,7 +15,14 @@ public final class AppState {
     var now: Date = .now
     var lastSyncAt: Date = .now
     var syncError: String?
+    var afkPrompt: AFKPrompt?
+    var afkToleranceMinutes: Int {
+        didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
+    }
+    public var onAFKDetected: (() -> Void)?
 
+    private let idleSeconds: () -> TimeInterval
+    private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
     private let eventLog = EventLog(directory: EventLog.defaultDirectory)
     private var syncTask: Task<Void, Never>?
@@ -37,7 +44,9 @@ public final class AppState {
         credentials.map(HarvestAPI.init)
     }
 
-    public init() {
+    public init(idleSeconds: @escaping () -> TimeInterval = systemIdleSeconds) {
+        self.idleSeconds = idleSeconds
+        afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.load()
         loadFavorites()
         if credentials != nil {
@@ -113,6 +122,7 @@ public final class AppState {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 now = .now
+                checkAFK()
             }
         }
     }
@@ -257,6 +267,45 @@ public final class AppState {
         }
     }
 
+    func entry(withId id: Int64) -> TimeEntry? {
+        entriesByDay.values.flatMap { $0 }.first { $0.id == id }
+    }
+
+    func dismissAFKPrompt() {
+        afkPrompt = nil
+    }
+
+    func removeAFKTime() async {
+        guard let api, let prompt = afkPrompt else { return }
+        afkPrompt = nil
+        guard let entry = entry(withId: prompt.entryId) else { return }
+        let hours = max(0, liveHours(for: entry) - prompt.duration(now: .now) / 3600)
+        do {
+            let updated = try await api.updateHours(entryId: entry.id, hours: hours)
+            eventLog.append(
+                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
+                day: entry.spentDate
+            )
+            apply(updated)
+            await sync()
+        } catch {
+            syncError = error.localizedDescription
+        }
+    }
+
+    private func checkAFK() {
+        let updated = AFKDetector.evaluate(
+            prompt: afkPrompt,
+            idleSeconds: idleSeconds(),
+            toleranceSeconds: Double(afkToleranceMinutes) * 60,
+            runningEntryId: runningEntry?.id,
+            now: .now
+        )
+        let isNew = updated != nil && afkPrompt == nil
+        afkPrompt = updated
+        if isNew { onAFKDetected?() }
+    }
+
     func loadProjectAssignments() async {
         guard let api, projectAssignments.isEmpty else { return }
         do {
@@ -291,6 +340,7 @@ public final class AppState {
         currentUserId = nil
         entriesByDay = [:]
         projectAssignments = []
+        afkPrompt = nil
         syncTask?.cancel()
         tickTask?.cancel()
     }

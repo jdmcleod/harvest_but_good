@@ -21,6 +21,7 @@ struct SetupView: View {
     }
 
     var body: some View {
+        @Bindable var state = state
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -90,6 +91,42 @@ struct SetupView: View {
                     Text("Your token is stored in the macOS Keychain, never in a file.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                if isSheet {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "moon.zzz.fill")
+                                .foregroundStyle(Color.harvest)
+                                .frame(width: 24, height: 24)
+                            Text("Idle Detection")
+                                .font(.headline)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("If the computer sits untouched for this long while a timer runs, the app pops up so you can keep or remove the idle time.")
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                TextField(
+                                    "Minutes",
+                                    value: $state.afkToleranceMinutes,
+                                    format: .number
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 64)
+                                Stepper("", value: $state.afkToleranceMinutes, in: 0...480)
+                                    .labelsHidden()
+                                Text("minutes — 0 turns it off")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.leading, 32)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
                 }
 
                 HStack {
