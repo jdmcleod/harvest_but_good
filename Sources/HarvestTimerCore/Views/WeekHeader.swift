@@ -5,15 +5,16 @@ struct WeekHeader: View {
     @Binding var showingSettings: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button {
                 shiftWeek(by: -1)
             } label: {
                 Image(systemName: "chevron.left")
             }
             .buttonStyle(.plain)
+            .pointingCursor()
 
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 ForEach(state.weekDays, id: \.self) { day in
                     DayTab(day: day)
                 }
@@ -25,6 +26,13 @@ struct WeekHeader: View {
                 Image(systemName: "chevron.right")
             }
             .buttonStyle(.plain)
+            .pointingCursor()
+
+            Rectangle()
+                .fill(.white.opacity(0.3))
+                .frame(width: 1, height: 28)
+
+            FavoriteChips()
 
             Spacer()
 
@@ -34,6 +42,7 @@ struct WeekHeader: View {
                 Image(systemName: "gearshape")
             }
             .buttonStyle(.plain)
+            .pointingCursor()
             .help("Settings")
 
             Button {
@@ -42,10 +51,13 @@ struct WeekHeader: View {
                 Image(systemName: "power")
             }
             .buttonStyle(.plain)
+            .pointingCursor()
             .help("Quit Harvest Timer")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .foregroundStyle(.white)
+        .background(Color.harvest.ignoresSafeArea(edges: .top))
     }
 
     private func shiftWeek(by weeks: Int) {
@@ -77,22 +89,24 @@ private struct DayTab: View {
             VStack(spacing: 2) {
                 Text(day.formatted(.dateTime.weekday(.abbreviated)))
                     .font(.caption)
-                    .foregroundStyle(isToday ? Color.harvest : .secondary)
+                    .foregroundStyle(isToday ? .white : .white.opacity(0.7))
                 Text(formattedHours(state.total(forDay: day)))
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
             }
-            .frame(width: 64)
-            .padding(.vertical, 6)
+            .frame(width: 56)
+            .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.harvest.opacity(0.15) : .clear)
+                    .fill(isSelected ? Color.white.opacity(0.2) : .clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(isSelected ? Color.harvest : .clear, lineWidth: 1)
+                    .strokeBorder(isSelected ? Color.white : .clear, lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .pointingCursor()
     }
 }

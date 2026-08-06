@@ -42,7 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let rootHosting = NSHostingController(rootView: RootView().environment(state))
         window = NSWindow(contentViewController: rootHosting)
         window.title = "HarvestButGood"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         hasRestoredFrame = window.setFrameUsingName("HarvestTimerMain")
         window.setFrameAutosaveName("HarvestTimerMain")

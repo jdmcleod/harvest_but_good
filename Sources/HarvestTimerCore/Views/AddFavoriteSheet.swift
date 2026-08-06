@@ -1,8 +1,11 @@
 import SwiftUI
 
-struct AddFavoriteSheet: View {
+struct ProjectTaskPickerSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
+    let title: String
+    let actionLabel: String
+    let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
@@ -13,58 +16,23 @@ struct AddFavoriteSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Add Favorite")
+            Text(title)
                 .font(.title3.weight(.semibold))
 
             if state.projectAssignments.isEmpty {
                 ProgressView("Loading projects…")
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
+            } else if let assignment = selectedAssignment {
+                taskStep(for: assignment)
             } else {
-                TextField("Search projects…", text: $search)
-                    .textFieldStyle(.roundedBorder)
-
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(filteredAssignments, id: \.id) { assignment in
-                            ProjectRow(
-                                assignment: assignment,
-                                isSelected: assignment.id == selectedAssignmentId
-                            ) {
-                                selectedAssignmentId = assignment.id
-                            }
-                        }
-                        if filteredAssignments.isEmpty {
-                            Text("No projects match “\(search)”")
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 12)
-                        }
-                    }
-                    .padding(4)
-                }
-                .frame(height: 220)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.separator)
-                )
-
-                Picker("Task", selection: $selectedTaskId) {
-                    Text("Choose a task").tag(Int64?.none)
-                    ForEach(selectedAssignment?.taskAssignments ?? [], id: \.task.id) { taskAssignment in
-                        Text(taskAssignment.task.name).tag(Int64?.some(taskAssignment.task.id))
-                    }
-                }
-                .disabled(selectedAssignment == nil)
+                projectStep
             }
 
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                Button("Add Favorite") { add() }
+                Button(actionLabel) { confirm() }
                     .buttonStyle(.borderedProminent)
                     .disabled(selectedAssignment == nil || selectedTaskId == nil)
             }
@@ -74,9 +42,94 @@ struct AddFavoriteSheet: View {
         .task {
             await state.loadProjectAssignments()
         }
-        .onChange(of: selectedAssignmentId) {
-            selectedTaskId = nil
+    }
+
+    private var projectStep: some View {
+        Group {
+            TextField("Search projects…", text: $search)
+                .textFieldStyle(.roundedBorder)
+
+            listContainer {
+                ForEach(filteredAssignments, id: \.id) { assignment in
+                    PickerRow(
+                        title: assignment.project.name,
+                        subtitle: assignment.client.name,
+                        isSelected: false
+                    ) {
+                        select(assignment)
+                    }
+                }
+                if filteredAssignments.isEmpty {
+                    Text("No projects match “\(search)”")
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 12)
+                }
+            }
         }
+    }
+
+    private func taskStep(for assignment: ProjectAssignment) -> some View {
+        Group {
+            HStack(spacing: 8) {
+                Button {
+                    selectedAssignmentId = nil
+                    selectedTaskId = nil
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.callout.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(assignment.project.name)
+                        .font(.callout.weight(.semibold))
+                    Text(assignment.client.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            listContainer {
+                ForEach(assignment.taskAssignments, id: \.task.id) { taskAssignment in
+                    PickerRow(
+                        title: taskAssignment.task.name,
+                        subtitle: nil,
+                        isSelected: taskAssignment.task.id == selectedTaskId
+                    ) {
+                        selectedTaskId = taskAssignment.task.id
+                    }
+                }
+                if assignment.taskAssignments.isEmpty {
+                    Text("No tasks on this project")
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+
+    private func listContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                content()
+            }
+            .padding(4)
+        }
+        .frame(height: 220)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator)
+        )
+    }
+
+    private func select(_ assignment: ProjectAssignment) {
+        selectedAssignmentId = assignment.id
+        selectedTaskId = assignment.taskAssignments.first {
+            $0.task.name.caseInsensitiveCompare("Development") == .orderedSame
+        }?.task.id
     }
 
     private var filteredAssignments: [ProjectAssignment] {
@@ -90,24 +143,35 @@ struct AddFavoriteSheet: View {
         }
     }
 
-    private func add() {
+    private func confirm() {
         guard let assignment = selectedAssignment,
               let taskId = selectedTaskId,
               let task = assignment.taskAssignments.first(where: { $0.task.id == taskId })?.task
         else { return }
-        state.addFavorite(Favorite(
-            projectId: assignment.project.id,
-            taskId: task.id,
-            clientName: assignment.client.name,
-            projectName: assignment.project.name,
-            taskName: task.name
-        ))
+        onConfirm(assignment, task)
         dismiss()
     }
 }
 
-private struct ProjectRow: View {
-    let assignment: ProjectAssignment
+struct AddFavoriteSheet: View {
+    @Environment(AppState.self) private var state
+
+    var body: some View {
+        ProjectTaskPickerSheet(title: "Add Favorite", actionLabel: "Add Favorite") { assignment, task in
+            state.addFavorite(Favorite(
+                projectId: assignment.project.id,
+                taskId: task.id,
+                clientName: assignment.client.name,
+                projectName: assignment.project.name,
+                taskName: task.name
+            ))
+        }
+    }
+}
+
+private struct PickerRow: View {
+    let title: String
+    let subtitle: String?
     let isSelected: Bool
     let select: () -> Void
 
@@ -115,11 +179,13 @@ private struct ProjectRow: View {
         Button(action: select) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(assignment.project.name)
+                    Text(title)
                         .font(.callout)
-                    Text(assignment.client.name)
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+                    }
                 }
                 Spacer()
                 if isSelected {

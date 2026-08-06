@@ -39,8 +39,8 @@ struct DayTimelineView: View {
                 }
                 zoomControls
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             Divider()
             GeometryReader { geometry in
                 let viewportHeight = geometry.size.height - 16
@@ -95,7 +95,7 @@ struct DayTimelineView: View {
                 }
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var zoomControls: some View {
@@ -106,6 +106,7 @@ struct DayTimelineView: View {
                 Image(systemName: "minus.magnifyingglass")
             }
             .disabled(zoom <= minZoom)
+            .pointingCursor(zoom > minZoom)
             .help("Zoom out")
             Button {
                 pendingZoom = min(zoom * zoomStep, maxZoom)
@@ -113,6 +114,7 @@ struct DayTimelineView: View {
                 Image(systemName: "plus.magnifyingglass")
             }
             .disabled(zoom >= maxZoom)
+            .pointingCursor(zoom < maxZoom)
             .help("Zoom in")
             Button {
                 pendingZoom = minZoom
@@ -120,6 +122,7 @@ struct DayTimelineView: View {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
             }
             .disabled(zoom <= minZoom)
+            .pointingCursor(zoom > minZoom)
             .help("Fit full day")
         }
         .buttonStyle(.borderless)
@@ -284,6 +287,7 @@ struct DayTimelineView: View {
             .frame(width: blockWidth, height: blockHeight)
             .position(x: labelWidth + 12 + blockWidth / 2, y: top + blockHeight / 2)
             .help(blockTooltip(block, projectName: projectName))
+            .pointingCursor()
             .onTapGesture {
                 state.selectedEntryId = isSelected ? nil : block.entryId
             }

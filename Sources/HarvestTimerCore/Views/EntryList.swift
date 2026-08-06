@@ -2,39 +2,64 @@ import SwiftUI
 
 struct EntryList: View {
     @Environment(AppState.self) private var state
+    @State private var showingStartTimer = false
 
     var body: some View {
         let entries = state.entries(forDay: state.selectedDay)
         let counts = state.startCounts(forDay: state.selectedDay)
 
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    if entries.isEmpty {
-                        Text("No entries for this day.")
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 40)
-                    } else {
-                        ForEach(entries) { entry in
-                            EntryCard(entry: entry, startCount: counts[entry.id] ?? 0)
-                                .id(entry.id)
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    showingStartTimer = true
+                } label: {
+                    Label("Start Timer", systemImage: "play.circle")
+                        .font(.callout)
+                }
+                .controlSize(.small)
+                .pointingCursor()
+                .help("Start a timer for any project")
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        if entries.isEmpty {
+                            Text("No entries for this day.")
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 40)
+                        } else {
+                            ForEach(entries) { entry in
+                                EntryCard(entry: entry, startCount: counts[entry.id] ?? 0)
+                                    .id(entry.id)
+                            }
                         }
                     }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, minHeight: 0, alignment: .top)
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, minHeight: 0, alignment: .top)
-            }
-            .onChange(of: state.selectedEntryId) { _, entryId in
-                guard let entryId else { return }
-                withAnimation {
-                    proxy.scrollTo(entryId)
+                .onChange(of: state.selectedEntryId) { _, entryId in
+                    guard let entryId else { return }
+                    withAnimation {
+                        proxy.scrollTo(entryId)
+                    }
                 }
             }
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Color(nsColor: .textBackgroundColor))
         .contentShape(Rectangle())
         .onTapGesture {
             NSApp.keyWindow?.makeFirstResponder(nil)
+        }
+        .sheet(isPresented: $showingStartTimer) {
+            ProjectTaskPickerSheet(title: "Start Timer", actionLabel: "Start Timer") { assignment, task in
+                Task {
+                    await state.startTimer(projectId: assignment.project.id, taskId: task.id)
+                }
+            }
         }
     }
 }
@@ -57,8 +82,8 @@ private struct EntryCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(projectColor(entry.project.id))
@@ -96,6 +121,7 @@ private struct EntryCard: View {
                                 .monospacedDigit()
                                 .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
                                 .onTapGesture { beginHoursEdit() }
+                                .pointingCursor(!entry.isRunning)
                                 .help(entry.isRunning ? "Stop the timer to edit the duration" : "Click to edit duration")
                         }
                         if startCount > 0 {
@@ -118,7 +144,7 @@ private struct EntryCard: View {
                     .padding(6)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color(nsColor: .textBackgroundColor).opacity(notesFocused ? 1 : 0.5))
+                            .fill(Color.primary.opacity(notesFocused ? 0.06 : 0.035))
                     )
                     .focused($notesFocused)
                     .onSubmit { save() }
@@ -131,10 +157,11 @@ private struct EntryCard: View {
                 Task { await state.toggle(entry) }
             } label: {
                 Image(systemName: entry.isRunning ? "stop.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 40))
+                    .font(.system(size: 34))
                     .foregroundStyle(entry.isRunning ? Color.red : Color.secondary)
             }
             .buttonStyle(.plain)
+            .pointingCursor()
             .help(entry.isRunning ? "Stop timer" : "Start timer")
         }
         .onDisappear {
@@ -144,15 +171,17 @@ private struct EntryCard: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+                    .fill(Color.primary.opacity(0.03))
                 RoundedRectangle(cornerRadius: 10)
                     .fill(highlightColor.opacity(0.08))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(highlightColor, lineWidth: 2)
+                .strokeBorder(
+                    highlightColor == .clear ? AnyShapeStyle(.quaternary) : AnyShapeStyle(highlightColor),
+                    lineWidth: highlightColor == .clear ? 1 : 2
+                )
         )
         .contentShape(Rectangle())
         .contextMenu {
