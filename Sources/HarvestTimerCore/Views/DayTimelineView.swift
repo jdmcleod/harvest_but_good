@@ -27,12 +27,16 @@ struct DayTimelineView: View {
     var body: some View {
         let blocks = state.timelineBlocks(forDay: state.selectedDay)
         let projectNames = projectNamesById()
+        let modifiedIds = state.modifiedEntryIds(forDay: state.selectedDay)
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Timeline")
                     .font(.headline)
                 Spacer()
+                if blocks.contains(where: { modifiedIds.contains($0.entryId) }) {
+                    legend
+                }
                 zoomControls
             }
             .padding(.horizontal, 12)
@@ -49,6 +53,7 @@ struct DayTimelineView: View {
                                 blockView(
                                     block,
                                     projectName: projectNames[block.projectId],
+                                    isModified: modifiedIds.contains(block.entryId),
                                     height: height,
                                     width: geometry.size.width
                                 )
@@ -118,6 +123,20 @@ struct DayTimelineView: View {
             .help("Fit full day")
         }
         .buttonStyle(.borderless)
+    }
+
+    private var legend: some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.secondary.opacity(0.5))
+                .overlay(StripeTexture().clipShape(RoundedRectangle(cornerRadius: 3)))
+                .frame(width: 22, height: 12)
+            Text("Edited or deleted")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.trailing, 8)
+        .help("Striped blocks belong to entries whose duration was edited or that were deleted")
     }
 
     private var scrollMarker: some View {
@@ -218,6 +237,7 @@ struct DayTimelineView: View {
     private func blockView(
         _ block: TimelineBlock,
         projectName: String?,
+        isModified: Bool,
         height: CGFloat,
         width: CGFloat
     ) -> some View {
@@ -229,6 +249,13 @@ struct DayTimelineView: View {
 
         RoundedRectangle(cornerRadius: 4)
             .fill(projectColor(block.projectId).opacity(isSelected ? 0.9 : 0.65))
+            .overlay {
+                if isModified {
+                    StripeTexture()
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay(alignment: .topLeading) {
                 if blockHeight >= 34 {
                     VStack(alignment: .leading, spacing: 1) {
@@ -296,5 +323,21 @@ struct DayTimelineView: View {
 
     private func blockTooltip(_ block: TimelineBlock, projectName: String?) -> String {
         "\(projectName ?? "Project \(block.projectId)"): \(timeRange(block))"
+    }
+}
+
+private struct StripeTexture: View {
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 7
+            var x = -size.height
+            while x < size.width {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                context.stroke(path, with: .color(.white.opacity(0.4)), lineWidth: 2.5)
+                x += spacing
+            }
+        }
     }
 }

@@ -92,6 +92,10 @@ public final class AppState {
         )
     }
 
+    func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
+        TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: dayString(day)))
+    }
+
     func startCounts(forDay day: Date) -> [Int64: Int] {
         TimelineBuilder.startCounts(from: eventLog.events(forDay: dayString(day)))
     }
@@ -223,10 +227,29 @@ public final class AppState {
         }
     }
 
+    func updateHours(_ entry: TimeEntry, hours: Double) async {
+        guard let api else { return }
+        do {
+            let updated = try await api.updateHours(entryId: entry.id, hours: hours)
+            eventLog.append(
+                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
+                day: entry.spentDate
+            )
+            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
+                .map { $0.id == updated.id ? updated : $0 }
+        } catch {
+            syncError = error.localizedDescription
+        }
+    }
+
     func deleteEntry(_ entry: TimeEntry) async {
         guard let api else { return }
         do {
             try await api.deleteEntry(entryId: entry.id)
+            eventLog.append(
+                TimerEvent(entryId: entry.id, action: .delete, timestamp: .now, projectId: entry.project.id),
+                day: entry.spentDate
+            )
             entriesByDay[entry.spentDate] = (entriesByDay[entry.spentDate] ?? [])
                 .filter { $0.id != entry.id }
         } catch {

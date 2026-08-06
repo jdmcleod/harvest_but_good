@@ -76,6 +76,8 @@ public enum TimelineBuilder {
                     start: open.timestamp,
                     end: event.timestamp
                 ))
+            case .edit, .delete:
+                continue
             }
         }
 
@@ -91,6 +93,10 @@ public enum TimelineBuilder {
         }
 
         return blocks.sorted { $0.start < $1.start }
+    }
+
+    public static func modifiedEntryIds(from events: [TimerEvent]) -> Set<Int64> {
+        Set(events.filter { $0.action == .edit || $0.action == .delete }.map(\.entryId))
     }
 
     public static func startCounts(from events: [TimerEvent]) -> [Int64: Int] {

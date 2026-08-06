@@ -95,6 +95,8 @@ public struct TimerEvent: Codable, Equatable {
     public enum Action: String, Codable {
         case start
         case stop
+        case edit
+        case delete
     }
 
     public let entryId: Int64

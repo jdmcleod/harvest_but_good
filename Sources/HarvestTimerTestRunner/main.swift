@@ -161,6 +161,61 @@ test("start counts per entry") {
     expect(counts[3] == nil, "entry 3 should have no starts")
 }
 
+test("edit and delete events do not affect blocks") {
+    let blocks = TimelineBuilder.blocks(
+        from: [
+            event(.start, entry: 1, minutes: 0),
+            event(.edit, entry: 1, minutes: 10),
+            event(.stop, entry: 1, minutes: 30),
+            event(.delete, entry: 1, minutes: 40),
+        ],
+        now: base.addingTimeInterval(3600),
+        runningEntryIds: []
+    )
+    expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
+    expect(blocks.first?.end == base.addingTimeInterval(1800), "block end mismatch")
+}
+
+test("modified entry ids come from edit and delete events") {
+    let ids = TimelineBuilder.modifiedEntryIds(from: [
+        event(.start, entry: 1, minutes: 0),
+        event(.stop, entry: 1, minutes: 30),
+        event(.edit, entry: 2, minutes: 40),
+        event(.delete, entry: 3, minutes: 50),
+    ])
+    expect(ids == [2, 3], "expected entries 2 and 3, got \(ids)")
+}
+
+test("parses durations in h:mm and decimal formats") {
+    expect(parseHours("1:30") == 1.5, "1:30 should parse to 1.5")
+    expect(parseHours("0:45") == 0.75, "0:45 should parse to 0.75")
+    expect(parseHours(" 2.25 ") == 2.25, "decimal with whitespace should parse")
+    expect(parseHours("0") == 0, "zero should parse")
+    expect(parseHours("24:00") == 24, "24:00 should parse")
+    expect(parseHours("abc") == nil, "letters should not parse")
+    expect(parseHours("1:75") == nil, "minutes over 59 should not parse")
+    expect(parseHours("-1") == nil, "negative should not parse")
+    expect(parseHours("25") == nil, "over 24 hours should not parse")
+    expect(parseHours(":30") == nil, "missing hours should not parse")
+}
+
+test("event log round-trips edit and delete actions") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let log = EventLog(directory: directory)
+    log.append(TimerEvent(entryId: 42, action: .edit, timestamp: base, projectId: 7), day: "2026-08-06")
+    log.append(
+        TimerEvent(entryId: 43, action: .delete, timestamp: base.addingTimeInterval(60), projectId: 7),
+        day: "2026-08-06"
+    )
+
+    let events = log.events(forDay: "2026-08-06")
+    expect(events.map(\.action) == [.edit, .delete], "actions should round-trip")
+    expect(TimelineBuilder.modifiedEntryIds(from: events) == [42, 43], "modified ids should round-trip")
+}
+
 test("event log append and read round trip") {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")

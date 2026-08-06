@@ -102,6 +102,10 @@ struct HarvestAPI {
         try await send("time_entries/\(entryId)/stop", method: "PATCH")
     }
 
+    func updateHours(entryId: Int64, hours: Double) async throws -> TimeEntry {
+        try await send("time_entries/\(entryId)", method: "PATCH", body: ["hours": hours])
+    }
+
     func updateNotes(entryId: Int64, notes: String) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)", method: "PATCH", body: ["notes": notes])
     }

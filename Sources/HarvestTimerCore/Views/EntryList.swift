@@ -45,7 +45,10 @@ private struct EntryCard: View {
     let startCount: Int
     @State private var notes: String
     @State private var confirmingDelete = false
+    @State private var editingHours = false
+    @State private var hoursText = ""
     @FocusState private var notesFocused: Bool
+    @FocusState private var hoursFocused: Bool
 
     init(entry: TimeEntry, startCount: Int) {
         self.entry = entry
@@ -69,10 +72,32 @@ private struct EntryCard: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text(formattedHours(state.liveHours(for: entry)))
-                            .font(.system(.title3, design: .rounded).weight(.semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
+                        if editingHours {
+                            TextField("0:00", text: $hoursText)
+                                .textFieldStyle(.plain)
+                                .font(.system(.title3, design: .rounded).weight(.semibold))
+                                .monospacedDigit()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 64)
+                                .padding(.horizontal, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(nsColor: .textBackgroundColor))
+                                )
+                                .focused($hoursFocused)
+                                .onSubmit { commitHours() }
+                                .onExitCommand { cancelHoursEdit() }
+                                .onChange(of: hoursFocused) { _, focused in
+                                    if !focused { commitHours() }
+                                }
+                        } else {
+                            Text(formattedHours(state.liveHours(for: entry)))
+                                .font(.system(.title3, design: .rounded).weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
+                                .onTapGesture { beginHoursEdit() }
+                                .help(entry.isRunning ? "Stop the timer to edit the duration" : "Click to edit duration")
+                        }
                         if startCount > 0 {
                             Text("\(startCount) start\(startCount == 1 ? "" : "s")")
                                 .font(.caption)
@@ -159,5 +184,25 @@ private struct EntryCard: View {
 
     private func save() {
         Task { await state.saveNotes(entry, notes: notes) }
+    }
+
+    private func beginHoursEdit() {
+        guard !entry.isRunning else { return }
+        hoursText = formattedHours(entry.hours)
+        editingHours = true
+        DispatchQueue.main.async { hoursFocused = true }
+    }
+
+    private func commitHours() {
+        guard editingHours else { return }
+        editingHours = false
+        guard let hours = parseHours(hoursText),
+              abs(hours - entry.hours) > 0.0001 else { return }
+        Task { await state.updateHours(entry, hours: hours) }
+    }
+
+    private func cancelHoursEdit() {
+        editingHours = false
+        hoursFocused = false
     }
 }
