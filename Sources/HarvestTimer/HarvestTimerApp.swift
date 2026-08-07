@@ -148,7 +148,9 @@ private struct StatusWidget: View {
     private var isRunning: Bool { state.runningEntry != nil }
 
     var body: some View {
-        HStack(spacing: 6) {
+        // Each button pads itself so the whole strip is clickable, not just
+        // the glyph and the digits.
+        HStack(spacing: 0) {
             Button {
                 Task { await state.toggleCurrentTimer() }
             } label: {
@@ -163,6 +165,10 @@ private struct StatusWidget: View {
                     }
                 }
                 .font(.system(size: 15, weight: .medium))
+                .padding(.leading, 8)
+                .padding(.trailing, 3)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(isRunning ? "Stop timer" : "Resume most recent timer")
@@ -172,12 +178,15 @@ private struct StatusWidget: View {
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(isRunning ? Color.white : Color.primary)
+                    .padding(.leading, 3)
+                    .padding(.trailing, 8)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Open HarvestButGood")
         }
-        .padding(.horizontal, 8)
         .frame(maxHeight: .infinity)
-        .fixedSize()
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
