@@ -48,7 +48,7 @@ public final class AppState {
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
-        credentials = Keychain.load()
+        credentials = Keychain.shared.load()
         favorites = favoritesStore.load()
     }
 
@@ -387,14 +387,14 @@ public final class AppState {
 
     func saveCredentials(token: String, accountId: String) throws {
         let credentials = Keychain.Credentials(token: token, accountId: accountId)
-        try Keychain.save(credentials)
+        try Keychain.shared.save(credentials)
         self.credentials = credentials
         currentUserId = nil
         start()
     }
 
     func removeCredentials() {
-        Keychain.clear()
+        Keychain.shared.clear()
         credentials = nil
         currentUserId = nil
         book.removeAll()

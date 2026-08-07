@@ -1,31 +1,37 @@
 import Foundation
 import Security
 
-enum Keychain {
-    private static let service = "com.rolemodel.HarvestTimer"
+struct Keychain {
+    /// What the app uses. Tests build their own under a service name of their
+    /// own, so a test run never touches the real credentials.
+    static let shared = Keychain(service: "com.rolemodel.HarvestTimer")
+
+    let service: String
 
     struct Credentials: Equatable {
         let token: String
         let accountId: String
     }
 
-    static func load() -> Credentials? {
+    /// Both halves or nothing: a token without an account is no use, and
+    /// leaving one behind would look like being signed in.
+    func load() -> Credentials? {
         guard let token = read(account: "token"),
               let accountId = read(account: "accountId") else { return nil }
         return Credentials(token: token, accountId: accountId)
     }
 
-    static func save(_ credentials: Credentials) throws {
+    func save(_ credentials: Credentials) throws {
         try write(account: "token", value: credentials.token)
         try write(account: "accountId", value: credentials.accountId)
     }
 
-    static func clear() {
+    func clear() {
         delete(account: "token")
         delete(account: "accountId")
     }
 
-    private static func read(account: String) -> String? {
+    func read(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -39,7 +45,9 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    private static func write(account: String, value: String) throws {
+    /// Replaces rather than updates: the old item goes first, so a second
+    /// save does not collide with the first.
+    func write(account: String, value: String) throws {
         delete(account: account)
         let attributes: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -53,7 +61,7 @@ enum Keychain {
         }
     }
 
-    private static func delete(account: String) {
+    func delete(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
