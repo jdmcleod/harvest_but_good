@@ -402,6 +402,30 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("a break taken before the timer started raises no prompt") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: today,
+                    hours: 1,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: .now
+                ),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            await state.sync()
+
+            let away = Double(state.afkToleranceMinutes) * 60 + 60
+            state.lastActivityAt = Date.now.addingTimeInterval(-away)
+            state.afkTick()
+            expect(state.afkPrompt == nil, "the break happened before the timer was on")
+        }
+    }
+
     await test("a turn of the AFK loop moves the clock on") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)

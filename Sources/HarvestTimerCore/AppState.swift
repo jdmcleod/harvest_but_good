@@ -382,7 +382,8 @@ public final class AppState {
             lastActivity: lastActivityAt,
             currentActivity: currentActivity,
             toleranceSeconds: Double(afkToleranceMinutes) * 60,
-            runningEntryId: runningEntry?.id
+            runningEntryId: runningEntry?.id,
+            runningEntryStartedAt: runningEntry?.timerStartedAt
         )
         lastActivityAt = max(lastActivityAt, currentActivity)
         let isNew = updated != nil && afkPrompt == nil
