@@ -5,7 +5,7 @@ struct AFKPromptView: View {
     let prompt: AFKPrompt
     @State private var loggingElsewhere = false
 
-    private var timeGone: String { formattedDuration(prompt.duration) }
+    private var timeGone: String { Hours.inWords(seconds: prompt.duration) }
     private var entry: TimeEntry? { state.entry(withId: prompt.entryId) }
 
     var body: some View {

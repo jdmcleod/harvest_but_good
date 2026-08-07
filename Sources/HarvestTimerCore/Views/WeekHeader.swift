@@ -90,7 +90,7 @@ private struct DayTab: View {
                 Text(day.formatted(.dateTime.weekday(.abbreviated)))
                     .font(.caption)
                     .foregroundStyle(isToday ? .white : .white.opacity(0.7))
-                Text(formattedHours(state.total(forDay: day)))
+                Text(Hours.formatted(state.total(forDay: day)))
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
             }

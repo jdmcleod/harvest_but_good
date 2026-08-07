@@ -5,7 +5,7 @@ public enum ProjectSearch {
     public struct Match {
         public let assignment: ProjectAssignment
         /// Tasks that matched the search, empty when the project itself matched.
-        public let matchedTasks: [ProjectAssignment.TaskAssignment.Task]
+        public let matchedTasks: [NamedRef]
 
         /// Show why a project surfaced: its matching tasks, else the client.
         public var subtitle: String {
@@ -13,6 +13,18 @@ public enum ProjectSearch {
                 ? assignment.client.name
                 : matchedTasks.map(\.name).joined(separator: ", ")
         }
+
+        /// The task to pick without asking. One matching task means the search
+        /// already said which one they want; otherwise fall back to the task
+        /// most work is booked to.
+        public var defaultTaskId: Int64? {
+            if matchedTasks.count == 1 { return matchedTasks[0].id }
+            return assignment.taskAssignments.first {
+                $0.task.name.caseInsensitiveCompare(Self.fallbackTaskName) == .orderedSame
+            }?.task.id
+        }
+
+        static let fallbackTaskName = "Development"
     }
 
     /// True when every whitespace-separated term of the query appears in the text.

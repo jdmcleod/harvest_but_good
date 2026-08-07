@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("AFK detection")
 func runAFKTests() {
     test("afk detector stays quiet below tolerance") {
         let prompt = AFKDetector.evaluate(
@@ -92,14 +95,5 @@ func runAFKTests() {
             runningEntryId: nil
         )
         expect(prompt?.entryId == 7, "existing prompt should survive a stopped timer")
-    }
-
-    test("formats durations for the afk prompt") {
-        expect(formattedDuration(30) == "less than a minute", "sub-minute mismatch")
-        expect(formattedDuration(60) == "1 min", "one minute mismatch")
-        expect(formattedDuration(45 * 60) == "45 min", "minutes mismatch")
-        expect(formattedDuration(3600) == "1 hour", "one hour mismatch")
-        expect(formattedDuration(2 * 3600) == "2 hours", "hours mismatch")
-        expect(formattedDuration(3600 + 12 * 60) == "1 hr 12 min", "mixed mismatch")
     }
 }

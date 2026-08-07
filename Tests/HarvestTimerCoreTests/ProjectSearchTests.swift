@@ -1,29 +1,24 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
-/// Builds an assignment through JSON, since the model has no public init.
+@testable import HarvestTimerCore
+
 func assignment(
     id: Int64,
     client: String,
     project: String,
     tasks: [String]
 ) -> ProjectAssignment {
-    let taskJSON = tasks.enumerated().map { index, name in
-        """
-        {"task": {"id": \(id * 100 + Int64(index)), "name": "\(name)"}}
-        """
-    }.joined(separator: ",")
-    let json = """
-    {
-      "id": \(id),
-      "project": {"id": \(id), "name": "\(project)"},
-      "client": {"id": \(id), "name": "\(client)"},
-      "task_assignments": [\(taskJSON)]
-    }
-    """
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try! decoder.decode(ProjectAssignment.self, from: Data(json.utf8))
+    ProjectAssignment(
+        id: id,
+        project: NamedRef(id: id, name: project),
+        client: NamedRef(id: id, name: client),
+        taskAssignments: tasks.enumerated().map { index, name in
+            ProjectAssignment.TaskAssignment(
+                task: NamedRef(id: id * 100 + Int64(index), name: name)
+            )
+        }
+    )
 }
 
 let searchFixtures = [
@@ -51,6 +46,7 @@ func search(_ query: String) -> [ProjectSearch.Match] {
     ProjectSearch.matches(in: searchFixtures, query: query)
 }
 
+@Test("Project search")
 func runProjectSearchTests() {
     test("every term has to appear, in any order and any case") {
         expect(ProjectSearch.matches("Almanac Development", query: "dev alma"), "both terms hit")
@@ -134,6 +130,16 @@ func runProjectSearchTests() {
 
     test("no match returns nothing") {
         expect(search("Nonexistent").isEmpty, "unmatched search should return nothing")
+    }
+
+    test("the default task follows the search when it narrows to one") {
+        // "Billy Dev" hits only the Development task, so no need to ask.
+        expect(search("Billy Dev").first?.defaultTaskId == 100, "should pick the single matching task")
+        // A project match leaves every task open, so fall back to Development.
+        expect(search("Maintenance").first?.defaultTaskId == 100, "should fall back to Development")
+        expect(search("ABC Dev").first?.defaultTaskId == 300, "fallback should be case insensitive")
+        // Almanac has no Development task and the search matched the project.
+        expect(search("Almanac").first?.defaultTaskId == nil, "no obvious task means no default")
     }
 
     test("subtitle explains why a project surfaced") {

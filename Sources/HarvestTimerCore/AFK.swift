@@ -39,32 +39,22 @@ public enum AFKDetector {
     }
 }
 
-/// Seconds since the last mouse or keyboard event. Only real input counts —
-/// `.combinedSessionState` on its own also ticks for events the machine
-/// generates while nobody is at the desk.
-public func systemIdleSeconds() -> TimeInterval {
-    let inputTypes: [CGEventType] = [
-        .mouseMoved,
-        .leftMouseDown,
-        .rightMouseDown,
-        .otherMouseDown,
-        .scrollWheel,
-        .keyDown,
-        .flagsChanged,
-    ]
-    return inputTypes
-        .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
-        .min() ?? 0
-}
-
-public func formattedDuration(_ seconds: TimeInterval) -> String {
-    let totalMinutes = Int(seconds / 60)
-    if totalMinutes < 1 { return "less than a minute" }
-    let hours = totalMinutes / 60
-    let minutes = totalMinutes % 60
-    switch (hours, minutes) {
-    case (0, _): return "\(minutes) min"
-    case (_, 0): return hours == 1 ? "1 hour" : "\(hours) hours"
-    default: return "\(hours) hr \(minutes) min"
+public extension AFKDetector {
+    /// Seconds since the last mouse or keyboard event. Only real input counts —
+    /// `.combinedSessionState` on its own also ticks for events the machine
+    /// generates while nobody is at the desk.
+    static func systemIdleSeconds() -> TimeInterval {
+        let inputTypes: [CGEventType] = [
+            .mouseMoved,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown,
+            .scrollWheel,
+            .keyDown,
+            .flagsChanged,
+        ]
+        return inputTypes
+            .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
+            .min() ?? 0
     }
 }

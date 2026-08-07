@@ -5,148 +5,153 @@ import Observation
 @Observable
 public final class AppState {
     var credentials: Keychain.Credentials?
-    var selectedDay: Date = .now {
+    public var selectedDay: Date = .now {
         didSet { selectedEntryId = nil }
     }
-    var selectedEntryId: Int64?
-    var entriesByDay: [String: [TimeEntry]] = [:]
-    var favorites: [Favorite] = []
+    public var selectedEntryId: Int64?
+    /// Read it freely; changing it goes through the methods below, which also
+    /// keep the event log and Harvest in step.
+    public private(set) var book = EntryBook()
+    public var favorites: [Favorite] = []
     var projectAssignments: [ProjectAssignment] = []
-    var now: Date = .now
-    var lastSyncAt: Date = .now
-    var syncError: String?
-    var afkPrompt: AFKPrompt?
-    var afkToleranceMinutes: Int {
+    public var now: Date = .now
+    public var lastSyncAt: Date = .now
+    public var syncError: String?
+    public var afkPrompt: AFKPrompt?
+    public var afkToleranceMinutes: Int {
         didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
     }
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
-    private var lastActivityAt: Date = .now
+    /// The most recent input we have seen. Internal, not private, so a test
+    /// can put it in the past instead of waiting out a tolerance.
+    var lastActivityAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
-    private let eventLog = EventLog(directory: EventLog.defaultDirectory)
-    private var syncTask: Task<Void, Never>?
-    private var tickTask: Task<Void, Never>?
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    private var favoritesURL: URL {
-        EventLog.defaultDirectory.appendingPathComponent("favorites.json")
-    }
+    private let weekCalendar = WeekCalendar()
+    private let eventLog: EventLog
+    private let favoritesStore: FavoritesStore
+    /// Set by tests, which stand in their own client rather than reach Harvest.
+    private let injectedClient: HarvestClient?
+    public static let syncInterval = Duration.seconds(30)
+    public static let afkInterval = Duration.seconds(10)
+    private let syncTicker = Ticker(every: AppState.syncInterval)
+    private let afkTicker = Ticker(every: AppState.afkInterval)
 
     var needsSetup: Bool { credentials == nil }
 
-    var api: HarvestAPI? {
-        credentials.map(HarvestAPI.init)
+    var api: HarvestClient? {
+        injectedClient ?? credentials.map { HarvestAPI(credentials: $0) }
     }
 
-    public init(idleSeconds: @escaping () -> TimeInterval = systemIdleSeconds) {
+    public init(idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds) {
         self.idleSeconds = idleSeconds
+        self.injectedClient = nil
+        self.eventLog = EventLog(directory: EventLog.defaultDirectory)
+        self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
-        credentials = Keychain.load()
-        loadFavorites()
-        if credentials != nil {
-            startSyncLoop()
-        }
+        credentials = Keychain.shared.load()
+        favorites = favoritesStore.load()
     }
 
-    func dayString(_ date: Date) -> String {
-        Self.dayFormatter.string(from: date)
+    /// Builds a state that talks to `client` and keeps its files under
+    /// `storageDirectory`, leaving the Keychain alone. Like the other init it
+    /// starts no loops, so a test drives `sync` and `afkTick` itself.
+    public init(
+        client: HarvestClient,
+        storageDirectory: URL,
+        idleSeconds: @escaping () -> TimeInterval = { 0 }
+    ) {
+        self.idleSeconds = idleSeconds
+        self.injectedClient = client
+        self.eventLog = EventLog(directory: storageDirectory)
+        self.favoritesStore = FavoritesStore(directory: storageDirectory)
+        afkToleranceMinutes = 10
+        favorites = favoritesStore.load()
     }
 
-    var weekDays: [Date] {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: selectedDay)
-        let daysFromMonday = (weekday + 5) % 7
-        let monday = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: -daysFromMonday, to: selectedDay)!
-        )
-        return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
+    public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
+
+    public func entries(forDay day: Date) -> [TimeEntry] {
+        entries(onDate: Day(day))
     }
 
-    func entries(forDay day: Date) -> [TimeEntry] {
-        entries(onDate: dayString(day))
-    }
-
-    /// Entries for a "yyyy-MM-dd" date, the form entries carry themselves.
-    func entries(onDate date: String) -> [TimeEntry] {
-        (entriesByDay[date] ?? []).sorted { $0.id < $1.id }
+    public func entries(onDate date: Day) -> [TimeEntry] {
+        book.entries(on: date)
     }
 
     public var runningEntry: TimeEntry? {
-        entriesByDay.values.flatMap { $0 }.first { $0.isRunning }
+        book.running
     }
 
-    func liveHours(for entry: TimeEntry) -> Double {
+    public func liveHours(for entry: TimeEntry) -> Double {
         guard entry.isRunning else { return entry.hours }
         return entry.hours + max(0, now.timeIntervalSince(lastSyncAt)) / 3600
     }
 
-    func total(forDay day: Date) -> Double {
+    public func total(forDay day: Date) -> Double {
         entries(forDay: day).reduce(0) { $0 + liveHours(for: $1) }
     }
 
     public var menuBarTitle: String {
         if let running = runningEntry {
-            return formattedHours(liveHours(for: running))
+            return Hours.formatted(liveHours(for: running))
         }
-        return formattedHours(total(forDay: .now))
+        return Hours.formatted(total(forDay: .now))
     }
 
-    func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
+    public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
         let running = entries(forDay: day).filter(\.isRunning).map {
             RunningTimer(entryId: $0.id, projectId: $0.project.id, startedAt: $0.timerStartedAt)
         }
         return TimelineBuilder.blocks(
-            from: eventLog.events(forDay: dayString(day)),
+            from: eventLog.events(forDay: Day(day)),
             now: now,
             running: running
         )
     }
 
-    func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
-        TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: dayString(day)))
+    public func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
+        TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: Day(day)))
     }
 
-    func startCounts(forDay day: Date) -> [Int64: Int] {
-        TimelineBuilder.startCounts(from: eventLog.events(forDay: dayString(day)))
+    public func startCounts(forDay day: Date) -> [Int64: Int] {
+        TimelineBuilder.startCounts(from: eventLog.events(forDay: Day(day)))
     }
 
-    func startSyncLoop() {
-        syncTask?.cancel()
-        syncTask = Task {
-            while !Task.isCancelled {
-                await sync()
-                try? await Task.sleep(for: .seconds(30))
-            }
+    /// Starts the sync and AFK loops. Safe to call again; a second call
+    /// replaces the running loops rather than adding to them.
+    public func start() {
+        guard api != nil else { return }
+        syncTicker.start { [weak self] in await self?.sync() }
+        afkTicker.start { [weak self] in self?.afkTick() }
+    }
+
+    public func stop() {
+        syncTicker.stop()
+        afkTicker.stop()
+    }
+
+    /// One turn of the AFK loop: move the clock on, roll the view over if the
+    /// day changed under it, then look for idleness.
+    public func afkTick() {
+        let previousNow = now
+        now = .now
+        // Only follow the clock past midnight for someone still looking at
+        // what was today. Anyone browsing another day stays where they are.
+        if Calendar.current.isDate(selectedDay, inSameDayAs: previousNow),
+           !Calendar.current.isDate(now, inSameDayAs: previousNow) {
+            selectedDay = now
         }
-        tickTask?.cancel()
-        tickTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
-                let previousNow = now
-                now = .now
-                if Calendar.current.isDate(selectedDay, inSameDayAs: previousNow),
-                   !Calendar.current.isDate(now, inSameDayAs: previousNow) {
-                    selectedDay = now
-                }
-                checkAFK()
-            }
-        }
+        checkAFK()
     }
 
     public func sync() async {
-        guard let api else { return }
-        var days = Set(weekDays.map(dayString))
-        let currentWeek = weekDaysContaining(.now)
-        days.formUnion(currentWeek.map(dayString))
+        var days = Set(weekDays.map(Day.init))
+        days.formUnion(weekCalendar.week(containing: .now).map(Day.init))
 
-        do {
+        await perform { api in
             let sortedDays = days.sorted()
             let userId: Int64
             if let currentUserId {
@@ -163,29 +168,23 @@ public final class AppState {
             now = .now
             lastSyncAt = now
             let previousRunning = runningEntry
-            var grouped: [String: [TimeEntry]] = [:]
-            for entry in entries {
-                grouped[entry.spentDate, default: []].append(entry)
-            }
-            for day in dayRange(from: sortedDays.first!, to: sortedDays.last!) {
-                entriesByDay[day] = grouped[day] ?? []
-            }
+            book.replace(
+                weekCalendar.days(from: sortedDays.first!, to: sortedDays.last!),
+                with: entries
+            )
             recordExternalTimerChange(from: previousRunning, to: runningEntry)
             syncError = nil
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
-    func startFavorite(_ favorite: Favorite) async {
+    public func startFavorite(_ favorite: Favorite) async {
         await startTimer(projectId: favorite.projectId, taskId: favorite.taskId)
     }
 
-    func startTimer(projectId: Int64, taskId: Int64, notes: String? = nil) async {
-        guard let api else { return }
-        let today = dayString(.now)
+    public func startTimer(projectId: Int64, taskId: Int64, notes: String? = nil) async {
+        let today = Day(.now)
         let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        do {
+        await perform { api in
             recordStopForRunningEntry()
             let entry: TimeEntry
             if let existing = entries(forDay: .now).first(where: {
@@ -207,35 +206,30 @@ public final class AppState {
             apply(entry)
             await sync()
             apply(entry)
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
-    func toggle(_ entry: TimeEntry) async {
-        guard let api else { return }
+    public func toggle(_ entry: TimeEntry) async {
         let current = currentVersion(of: entry)
-        do {
+        await perform { api in
             let updated: TimeEntry
             if current.isRunning {
                 updated = try await api.stop(entryId: current.id)
                 eventLog.append(
                     TimerEvent(entryId: current.id, action: .stop, timestamp: .now, projectId: current.project.id),
-                    day: dayString(.now)
+                    day: Day(.now)
                 )
             } else {
                 recordStopForRunningEntry()
                 updated = try await api.restart(entryId: current.id)
                 eventLog.append(
                     TimerEvent(entryId: current.id, action: .start, timestamp: .now, projectId: current.project.id),
-                    day: dayString(.now)
+                    day: Day(.now)
                 )
             }
             apply(updated)
             await sync()
             apply(updated)
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -247,49 +241,31 @@ public final class AppState {
         }
     }
 
-    func saveNotes(_ entry: TimeEntry, notes: String) async {
-        guard let api, notes != (entry.notes ?? "") else { return }
-        do {
-            let updated = try await api.updateNotes(entryId: entry.id, notes: notes)
-            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
-                .map { $0.id == updated.id ? updated : $0 }
-        } catch {
-            syncError = error.localizedDescription
+    public func saveNotes(_ entry: TimeEntry, notes: String) async {
+        guard notes != (entry.notes ?? "") else { return }
+        await perform { api in
+            apply(try await api.updateNotes(entryId: entry.id, notes: notes))
         }
     }
 
-    func updateHours(_ entry: TimeEntry, hours: Double) async {
-        guard let api else { return }
-        do {
+    public func updateHours(_ entry: TimeEntry, hours: Double) async {
+        await perform { api in
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
-                day: entry.spentDate
-            )
-            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
-                .map { $0.id == updated.id ? updated : $0 }
-        } catch {
-            syncError = error.localizedDescription
+            logEdit(updated)
+            apply(updated)
         }
     }
 
-    func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
-        guard let api,
-              entry.project.id != projectId || entry.task.id != taskId else { return }
-        do {
+    public func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
+        guard entry.project.id != projectId || entry.task.id != taskId else { return }
+        await perform { api in
             let updated = try await api.updateProjectTask(
                 entryId: entry.id,
                 projectId: projectId,
                 taskId: taskId
             )
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: updated.project.id),
-                day: entry.spentDate
-            )
-            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
-                .map { $0.id == updated.id ? updated : $0 }
-        } catch {
-            syncError = error.localizedDescription
+            logEdit(updated)
+            apply(updated)
         }
     }
 
@@ -297,15 +273,14 @@ public final class AppState {
     /// on the same day. Merges into a matching entry when one already exists.
     /// A running timer keeps running: on the source if time is left on it,
     /// otherwise on the destination it just moved to.
-    func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
-        guard let api else { return }
+    public func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
         var source = currentVersion(of: entry)
         guard projectId != source.project.id || taskId != source.task.id,
               hours > 0, liveHours(for: source) > 0
         else { return }
         let wasRunning = source.isRunning
 
-        do {
+        await perform { api in
             if wasRunning {
                 // Stop first so the split works off a settled number rather
                 // than one still climbing.
@@ -322,7 +297,7 @@ public final class AppState {
                     entryId: destination.id,
                     hours: destination.hours + plan.moved
                 )
-                logEdit(destination)
+                logEdit(updated)
                 apply(updated)
             } else {
                 let created = try await api.createEntry(
@@ -348,11 +323,11 @@ public final class AppState {
                 )
             }
             await sync()
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
+    /// Notes that an entry's duration or booking changed, so the timeline can
+    /// stripe it — its blocks no longer add up to its hours.
     private func logEdit(_ entry: TimeEntry) {
         eventLog.append(
             TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
@@ -360,52 +335,43 @@ public final class AppState {
         )
     }
 
-    func deleteEntry(_ entry: TimeEntry) async {
-        guard let api else { return }
-        do {
+    public func deleteEntry(_ entry: TimeEntry) async {
+        await perform { api in
             try await api.deleteEntry(entryId: entry.id)
             eventLog.append(
                 TimerEvent(entryId: entry.id, action: .delete, timestamp: .now, projectId: entry.project.id),
                 day: entry.spentDate
             )
-            entriesByDay[entry.spentDate] = (entriesByDay[entry.spentDate] ?? [])
-                .filter { $0.id != entry.id }
-        } catch {
-            syncError = error.localizedDescription
+            book.remove(entry)
         }
     }
 
-    func entry(withId id: Int64) -> TimeEntry? {
-        entriesByDay.values.flatMap { $0 }.first { $0.id == id }
+    public func entry(withId id: Int64) -> TimeEntry? {
+        book.entry(withId: id)
     }
 
-    func dismissAFKPrompt() {
+    public func dismissAFKPrompt() {
         afkPrompt = nil
     }
 
     /// Takes the away time off the entry that was running and puts it on
     /// another project and task instead.
-    func moveAFKTime(projectId: Int64, taskId: Int64) async {
+    public func moveAFKTime(projectId: Int64, taskId: Int64) async {
         guard let prompt = afkPrompt, let entry = entry(withId: prompt.entryId) else { return }
         afkPrompt = nil
         await moveTime(entry, hours: prompt.duration / 3600, projectId: projectId, taskId: taskId)
     }
 
-    func removeAFKTime() async {
-        guard let api, let prompt = afkPrompt else { return }
+    public func removeAFKTime() async {
+        guard let prompt = afkPrompt else { return }
         afkPrompt = nil
         guard let entry = entry(withId: prompt.entryId) else { return }
         let hours = max(0, liveHours(for: entry) - prompt.duration / 3600)
-        do {
+        await perform { api in
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
-                day: entry.spentDate
-            )
+            logEdit(updated)
             apply(updated)
             await sync()
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -425,67 +391,65 @@ public final class AppState {
     }
 
     func loadProjectAssignments() async {
-        guard let api, projectAssignments.isEmpty else { return }
-        do {
+        guard projectAssignments.isEmpty else { return }
+        await perform { api in
             projectAssignments = try await api.projectAssignments()
+        }
+    }
+
+    public func addFavorite(_ favorite: Favorite) {
+        // Matched by id, not by every field: a project renamed in Harvest is
+        // still the same favorite.
+        guard !favorites.contains(where: { $0.id == favorite.id }) else { return }
+        favorites.append(favorite)
+        favoritesStore.save(favorites)
+    }
+
+    public func removeFavorite(_ favorite: Favorite) {
+        favorites.removeAll { $0.id == favorite.id }
+        favoritesStore.save(favorites)
+    }
+
+    func saveCredentials(token: String, accountId: String) throws {
+        let credentials = Keychain.Credentials(token: token, accountId: accountId)
+        try Keychain.shared.save(credentials)
+        self.credentials = credentials
+        currentUserId = nil
+        start()
+    }
+
+    func removeCredentials() {
+        Keychain.shared.clear()
+        credentials = nil
+        currentUserId = nil
+        book.removeAll()
+        projectAssignments = []
+        afkPrompt = nil
+        stop()
+    }
+
+    /// Runs `work` against Harvest, putting any failure in the error banner.
+    /// Does nothing when there are no credentials yet.
+    private func perform(_ work: (HarvestClient) async throws -> Void) async {
+        guard let api else { return }
+        do {
+            try await work(api)
         } catch {
             syncError = error.localizedDescription
         }
     }
 
-    func addFavorite(_ favorite: Favorite) {
-        guard !favorites.contains(favorite) else { return }
-        favorites.append(favorite)
-        saveFavorites()
-    }
-
-    func removeFavorite(_ favorite: Favorite) {
-        favorites.removeAll { $0.id == favorite.id }
-        saveFavorites()
-    }
-
-    func saveCredentials(token: String, accountId: String) throws {
-        let credentials = Keychain.Credentials(token: token, accountId: accountId)
-        try Keychain.save(credentials)
-        self.credentials = credentials
-        currentUserId = nil
-        startSyncLoop()
-    }
-
-    func removeCredentials() {
-        Keychain.clear()
-        credentials = nil
-        currentUserId = nil
-        entriesByDay = [:]
-        projectAssignments = []
-        afkPrompt = nil
-        syncTask?.cancel()
-        tickTask?.cancel()
-    }
-
     private func currentVersion(of entry: TimeEntry) -> TimeEntry {
-        entriesByDay[entry.spentDate]?.first { $0.id == entry.id } ?? entry
+        book.currentVersion(of: entry)
     }
 
+    /// Files an entry Harvest just handed back. The clock restarts with it, so
+    /// a running entry counts up from the hours Harvest reported rather than
+    /// from the last sync.
     private func apply(_ updated: TimeEntry) {
         now = .now
         lastSyncAt = now
-        if updated.isRunning {
-            for (day, list) in entriesByDay {
-                entriesByDay[day] = list.map { entry in
-                    var entry = entry
-                    if entry.id != updated.id { entry.isRunning = false }
-                    return entry
-                }
-            }
-        }
-        var day = entriesByDay[updated.spentDate] ?? []
-        if let index = day.firstIndex(where: { $0.id == updated.id }) {
-            day[index] = updated
-        } else {
-            day.append(updated)
-        }
-        entriesByDay[updated.spentDate] = day
+        book.apply(updated)
     }
 
     private func recordExternalTimerChange(from previous: TimeEntry?, to current: TimeEntry?) {
@@ -513,45 +477,7 @@ public final class AppState {
         guard let running = runningEntry else { return }
         eventLog.append(
             TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id),
-            day: dayString(.now)
+            day: Day(.now)
         )
-    }
-
-    private func weekDaysContaining(_ date: Date) -> [Date] {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: date)
-        let daysFromMonday = (weekday + 5) % 7
-        let monday = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: -daysFromMonday, to: date)!
-        )
-        return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
-    }
-
-    private func dayRange(from: String, to: String) -> [String] {
-        guard let start = Self.dayFormatter.date(from: from),
-              let end = Self.dayFormatter.date(from: to) else { return [] }
-        var days: [String] = []
-        var current = start
-        while current <= end {
-            days.append(dayString(current))
-            current = Calendar.current.date(byAdding: .day, value: 1, to: current)!
-        }
-        return days
-    }
-
-    private func loadFavorites() {
-        guard let data = try? Data(contentsOf: favoritesURL),
-              let loaded = try? JSONDecoder().decode([Favorite].self, from: data) else { return }
-        favorites = loaded
-    }
-
-    private func saveFavorites() {
-        try? FileManager.default.createDirectory(
-            at: EventLog.defaultDirectory,
-            withIntermediateDirectories: true
-        )
-        if let data = try? JSONEncoder().encode(favorites) {
-            try? data.write(to: favoritesURL, options: .atomic)
-        }
     }
 }

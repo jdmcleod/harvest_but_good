@@ -1,30 +1,49 @@
 import Foundation
 
-public struct TimeEntry: Codable, Identifiable, Equatable {
-    public struct Project: Codable, Equatable {
-        public let id: Int64
-        public let name: String
-    }
-
-    public struct Task: Codable, Equatable {
-        public let id: Int64
-        public let name: String
-    }
-
-    public struct Client: Codable, Equatable {
-        public let id: Int64
-        public let name: String
-    }
-
+/// Harvest hands back projects, tasks, and clients in the same shape: an id
+/// and a name. One type covers all of them.
+public struct NamedRef: Codable, Identifiable, Equatable {
     public let id: Int64
-    public let spentDate: String
+    public let name: String
+
+    public init(id: Int64, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+public struct TimeEntry: Codable, Identifiable, Equatable {
+    public let id: Int64
+    public let spentDate: Day
     public var hours: Double
     public var notes: String?
     public var isRunning: Bool
-    public let project: Project
-    public let task: Task
-    public let client: Client
+    public let project: NamedRef
+    public let task: NamedRef
+    public let client: NamedRef
     public let timerStartedAt: Date?
+
+    public init(
+        id: Int64,
+        spentDate: Day,
+        hours: Double,
+        notes: String? = nil,
+        isRunning: Bool = false,
+        project: NamedRef,
+        task: NamedRef,
+        client: NamedRef,
+        timerStartedAt: Date? = nil
+    ) {
+        self.id = id
+        self.spentDate = spentDate
+        self.hours = hours
+        self.notes = notes
+        self.isRunning = isRunning
+        self.project = project
+        self.task = task
+        self.client = client
+        self.timerStartedAt = timerStartedAt
+    }
 }
 
 public struct TimeEntriesPage: Codable {
@@ -33,29 +52,30 @@ public struct TimeEntriesPage: Codable {
 }
 
 public struct ProjectAssignment: Codable, Identifiable {
-    public struct Project: Codable {
-        public let id: Int64
-        public let name: String
-    }
-
-    public struct Client: Codable {
-        public let id: Int64
-        public let name: String
-    }
-
     public struct TaskAssignment: Codable {
-        public struct Task: Codable {
-            public let id: Int64
-            public let name: String
-        }
+        public let task: NamedRef
 
-        public let task: Task
+        public init(task: NamedRef) {
+            self.task = task
+        }
     }
 
     public let id: Int64
-    public let project: Project
-    public let client: Client
+    public let project: NamedRef
+    public let client: NamedRef
     public let taskAssignments: [TaskAssignment]
+
+    public init(
+        id: Int64,
+        project: NamedRef,
+        client: NamedRef,
+        taskAssignments: [TaskAssignment]
+    ) {
+        self.id = id
+        self.project = project
+        self.client = client
+        self.taskAssignments = taskAssignments
+    }
 }
 
 public struct ProjectAssignmentsPage: Codable {
@@ -67,10 +87,20 @@ public struct HarvestUser: Codable {
     public let id: Int64
     public let firstName: String
     public let lastName: String
+
+    public init(id: Int64, firstName: String, lastName: String) {
+        self.id = id
+        self.firstName = firstName
+        self.lastName = lastName
+    }
 }
 
 public struct HarvestCompany: Codable {
     public let name: String
+
+    public init(name: String) {
+        self.name = name
+    }
 }
 
 public struct Favorite: Codable, Identifiable, Equatable {

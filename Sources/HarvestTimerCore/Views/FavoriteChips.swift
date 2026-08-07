@@ -53,11 +53,11 @@ private struct FavoriteChip: View {
                 .font(.system(size: 8, weight: .bold, design: .rounded))
                 .rotationEffect(.degrees(90))
                 .fixedSize()
-                .foregroundStyle(isRunning ? .white : projectColor(favorite.projectId))
+                .foregroundStyle(isRunning ? .white : Color.forProject(favorite.projectId))
                 .frame(width: 14, height: 40)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(isRunning ? projectColor(favorite.projectId).opacity(0.9) : Color.white.opacity(0.9))
+                        .fill(isRunning ? Color.forProject(favorite.projectId).opacity(0.9) : Color.white.opacity(0.9))
                 )
         }
         .buttonStyle(.plain)
