@@ -24,6 +24,7 @@ public final class AppState {
     private let idleSeconds: () -> TimeInterval
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
+    private let weekCalendar = WeekCalendar()
     private let storageDirectory: URL
     private let eventLog: EventLog
     /// Set by tests, which stand in their own client rather than reach Harvest.
@@ -69,7 +70,7 @@ public final class AppState {
         loadFavorites()
     }
 
-    public var weekDays: [Date] { weekDaysContaining(selectedDay) }
+    public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
 
     public func entries(forDay day: Date) -> [TimeEntry] {
         entries(onDate: Day(day))
@@ -137,7 +138,7 @@ public final class AppState {
     public func sync() async {
         guard let api else { return }
         var days = Set(weekDays.map(Day.init))
-        let currentWeek = weekDaysContaining(.now)
+        let currentWeek = weekCalendar.week(containing: .now)
         days.formUnion(currentWeek.map(Day.init))
 
         do {
@@ -161,7 +162,7 @@ public final class AppState {
             for entry in entries {
                 grouped[entry.spentDate, default: []].append(entry)
             }
-            for day in dayRange(from: sortedDays.first!, to: sortedDays.last!) {
+            for day in weekCalendar.days(from: sortedDays.first!, to: sortedDays.last!) {
                 entriesByDay[day] = grouped[day] ?? []
             }
             recordExternalTimerChange(from: previousRunning, to: runningEntry)
@@ -486,29 +487,6 @@ public final class AppState {
             TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id),
             day: Day(.now)
         )
-    }
-
-    private func weekDaysContaining(_ date: Date) -> [Date] {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: date)
-        let daysFromMonday = (weekday + 5) % 7
-        let monday = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: -daysFromMonday, to: date)!
-        )
-        return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
-    }
-
-    /// Every day from `from` to `to`, so a day that came back with no entries
-    /// is emptied rather than left holding what it had before.
-    private func dayRange(from: Day, to: Day) -> [Day] {
-        guard let start = from.date, let end = to.date else { return [] }
-        var days: [Day] = []
-        var current = start
-        while current <= end {
-            days.append(Day(current))
-            current = Calendar.current.date(byAdding: .day, value: 1, to: current)!
-        }
-        return days
     }
 
     private func loadFavorites() {
