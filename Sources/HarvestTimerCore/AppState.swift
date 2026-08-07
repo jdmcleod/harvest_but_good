@@ -25,16 +25,12 @@ public final class AppState {
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
     private let weekCalendar = WeekCalendar()
-    private let storageDirectory: URL
     private let eventLog: EventLog
+    private let favoritesStore: FavoritesStore
     /// Set by tests, which stand in their own client rather than reach Harvest.
     private let injectedClient: HarvestClient?
     private var syncTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
-
-    private var favoritesURL: URL {
-        storageDirectory.appendingPathComponent("favorites.json")
-    }
 
     var needsSetup: Bool { credentials == nil }
 
@@ -45,11 +41,11 @@ public final class AppState {
     public init(idleSeconds: @escaping () -> TimeInterval = systemIdleSeconds) {
         self.idleSeconds = idleSeconds
         self.injectedClient = nil
-        self.storageDirectory = EventLog.defaultDirectory
-        self.eventLog = EventLog(directory: storageDirectory)
+        self.eventLog = EventLog(directory: EventLog.defaultDirectory)
+        self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.load()
-        loadFavorites()
+        favorites = favoritesStore.load()
         if credentials != nil {
             startSyncLoop()
         }
@@ -64,10 +60,10 @@ public final class AppState {
     ) {
         self.idleSeconds = idleSeconds
         self.injectedClient = client
-        self.storageDirectory = storageDirectory
         self.eventLog = EventLog(directory: storageDirectory)
+        self.favoritesStore = FavoritesStore(directory: storageDirectory)
         afkToleranceMinutes = 10
-        loadFavorites()
+        favorites = favoritesStore.load()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -408,12 +404,12 @@ public final class AppState {
     public func addFavorite(_ favorite: Favorite) {
         guard !favorites.contains(favorite) else { return }
         favorites.append(favorite)
-        saveFavorites()
+        favoritesStore.save(favorites)
     }
 
     public func removeFavorite(_ favorite: Favorite) {
         favorites.removeAll { $0.id == favorite.id }
-        saveFavorites()
+        favoritesStore.save(favorites)
     }
 
     func saveCredentials(token: String, accountId: String) throws {
@@ -487,21 +483,5 @@ public final class AppState {
             TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id),
             day: Day(.now)
         )
-    }
-
-    private func loadFavorites() {
-        guard let data = try? Data(contentsOf: favoritesURL),
-              let loaded = try? JSONDecoder().decode([Favorite].self, from: data) else { return }
-        favorites = loaded
-    }
-
-    private func saveFavorites() {
-        try? FileManager.default.createDirectory(
-            at: EventLog.defaultDirectory,
-            withIntermediateDirectories: true
-        )
-        if let data = try? JSONEncoder().encode(favorites) {
-            try? data.write(to: favoritesURL, options: .atomic)
-        }
     }
 }

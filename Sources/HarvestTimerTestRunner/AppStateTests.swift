@@ -356,3 +356,52 @@ private func runMoveTimeStateTests() async {
         }
     }
 }
+
+@MainActor
+func runFavoritesTests() async {
+    let favorite = Favorite(
+        projectId: 10,
+        taskId: 100,
+        clientName: "Client",
+        projectName: "Project 10",
+        taskName: "Development"
+    )
+
+    await test("favorites survive a restart") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.addFavorite(favorite)
+            expect(state.favorites.count == 1, "the favorite should be there")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.favorites == [favorite], "it should be read back from disk")
+
+            reopened.removeFavorite(favorite)
+            let again = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(again.favorites.isEmpty, "removing it should stick too")
+        }
+    }
+
+    await test("an empty or missing favorites file is not a failure") {
+        try await withTemporaryDirectory { directory in
+            let store = FavoritesStore(directory: directory)
+            expect(store.load().isEmpty, "a missing file should read as empty")
+
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("not json".utf8).write(to: directory.appendingPathComponent("favorites.json"))
+            expect(store.load().isEmpty, "unreadable contents should read as empty")
+        }
+    }
+
+    await test("starting a favorite starts its project and task") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            let state = AppState(client: fake, storageDirectory: directory)
+            await state.startFavorite(favorite)
+            expect(
+                fake.calls.contains("startTimer(project: 10, task: 100)"),
+                "expected a start for the favorite, got \(fake.calls)"
+            )
+        }
+    }
+}
