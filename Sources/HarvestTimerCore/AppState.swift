@@ -9,7 +9,9 @@ public final class AppState {
         didSet { selectedEntryId = nil }
     }
     public var selectedEntryId: Int64?
-    public var entriesByDay: [Day: [TimeEntry]] = [:]
+    /// Read it freely; changing it goes through the methods below, which also
+    /// keep the event log and Harvest in step.
+    public private(set) var book = EntryBook()
     public var favorites: [Favorite] = []
     var projectAssignments: [ProjectAssignment] = []
     public var now: Date = .now
@@ -73,11 +75,11 @@ public final class AppState {
     }
 
     public func entries(onDate date: Day) -> [TimeEntry] {
-        (entriesByDay[date] ?? []).sorted { $0.id < $1.id }
+        book.entries(on: date)
     }
 
     public var runningEntry: TimeEntry? {
-        entriesByDay.values.flatMap { $0 }.first { $0.isRunning }
+        book.running
     }
 
     public func liveHours(for entry: TimeEntry) -> Double {
@@ -153,13 +155,10 @@ public final class AppState {
             now = .now
             lastSyncAt = now
             let previousRunning = runningEntry
-            var grouped: [Day: [TimeEntry]] = [:]
-            for entry in entries {
-                grouped[entry.spentDate, default: []].append(entry)
-            }
-            for day in weekCalendar.days(from: sortedDays.first!, to: sortedDays.last!) {
-                entriesByDay[day] = grouped[day] ?? []
-            }
+            book.replace(
+                weekCalendar.days(from: sortedDays.first!, to: sortedDays.last!),
+                with: entries
+            )
             recordExternalTimerChange(from: previousRunning, to: runningEntry)
             syncError = nil
         }
@@ -328,13 +327,12 @@ public final class AppState {
                 TimerEvent(entryId: entry.id, action: .delete, timestamp: .now, projectId: entry.project.id),
                 day: entry.spentDate
             )
-            entriesByDay[entry.spentDate] = (entriesByDay[entry.spentDate] ?? [])
-                .filter { $0.id != entry.id }
+            book.remove(entry)
         }
     }
 
     public func entry(withId id: Int64) -> TimeEntry? {
-        entriesByDay.values.flatMap { $0 }.first { $0.id == id }
+        book.entry(withId: id)
     }
 
     public func dismissAFKPrompt() {
@@ -399,7 +397,7 @@ public final class AppState {
         Keychain.clear()
         credentials = nil
         currentUserId = nil
-        entriesByDay = [:]
+        book.removeAll()
         projectAssignments = []
         afkPrompt = nil
         stop()
@@ -417,28 +415,16 @@ public final class AppState {
     }
 
     private func currentVersion(of entry: TimeEntry) -> TimeEntry {
-        entriesByDay[entry.spentDate]?.first { $0.id == entry.id } ?? entry
+        book.currentVersion(of: entry)
     }
 
+    /// Files an entry Harvest just handed back. The clock restarts with it, so
+    /// a running entry counts up from the hours Harvest reported rather than
+    /// from the last sync.
     private func apply(_ updated: TimeEntry) {
         now = .now
         lastSyncAt = now
-        if updated.isRunning {
-            for (day, list) in entriesByDay {
-                entriesByDay[day] = list.map { entry in
-                    var entry = entry
-                    if entry.id != updated.id { entry.isRunning = false }
-                    return entry
-                }
-            }
-        }
-        var day = entriesByDay[updated.spentDate] ?? []
-        if let index = day.firstIndex(where: { $0.id == updated.id }) {
-            day[index] = updated
-        } else {
-            day.append(updated)
-        }
-        entriesByDay[updated.spentDate] = day
+        book.apply(updated)
     }
 
     private func recordExternalTimerChange(from previous: TimeEntry?, to current: TimeEntry?) {
