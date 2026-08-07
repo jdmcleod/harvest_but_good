@@ -98,11 +98,13 @@ public final class AppState {
     }
 
     func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
-        let runningIds = Set(entries(forDay: day).filter(\.isRunning).map(\.id))
+        let running = entries(forDay: day).filter(\.isRunning).map {
+            RunningTimer(entryId: $0.id, projectId: $0.project.id, startedAt: $0.timerStartedAt)
+        }
         return TimelineBuilder.blocks(
             from: eventLog.events(forDay: dayString(day)),
             now: now,
-            runningEntryIds: runningIds
+            running: running
         )
     }
 
@@ -126,7 +128,12 @@ public final class AppState {
         tickTask = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
+                let previousNow = now
                 now = .now
+                if Calendar.current.isDate(selectedDay, inSameDayAs: previousNow),
+                   !Calendar.current.isDate(now, inSameDayAs: previousNow) {
+                    selectedDay = now
+                }
                 checkAFK()
             }
         }

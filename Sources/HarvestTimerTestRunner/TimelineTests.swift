@@ -15,7 +15,7 @@ func runTimelineTests() {
         let blocks = TimelineBuilder.blocks(
             from: [event(.start, entry: 1, minutes: 0), event(.stop, entry: 1, minutes: 30)],
             now: base.addingTimeInterval(3600),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
         expect(blocks.first?.start == base, "block start mismatch")
@@ -27,7 +27,7 @@ func runTimelineTests() {
         let blocks = TimelineBuilder.blocks(
             from: [event(.start, entry: 1, minutes: 0)],
             now: now,
-            runningEntryIds: [1]
+            running: [RunningTimer(entryId: 1, projectId: 1, startedAt: nil)]
         )
         expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
         expect(blocks.first?.end == now, "open block should end at now")
@@ -37,7 +37,7 @@ func runTimelineTests() {
         let blocks = TimelineBuilder.blocks(
             from: [event(.start, entry: 1, minutes: 0)],
             now: base.addingTimeInterval(45 * 60),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.isEmpty, "paused entry should have no open block, got \(blocks.count)")
     }
@@ -50,7 +50,7 @@ func runTimelineTests() {
                 event(.start, entry: 1, minutes: 30),
             ],
             now: base.addingTimeInterval(45 * 60),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 1, "expected only the closed block, got \(blocks.count)")
         expect(blocks.first?.end == base.addingTimeInterval(1200), "closed block end mismatch")
@@ -65,7 +65,7 @@ func runTimelineTests() {
                 event(.stop, entry: 1, minutes: 90),
             ],
             now: base.addingTimeInterval(7200),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 2, "expected 2 blocks, got \(blocks.count)")
         expect(blocks.first?.end == base.addingTimeInterval(1200), "first block end mismatch")
@@ -81,7 +81,7 @@ func runTimelineTests() {
                 event(.stop, entry: 2, project: 2, minutes: 45),
             ],
             now: base.addingTimeInterval(7200),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 2, "expected 2 blocks, got \(blocks.count)")
         expect(blocks.first?.projectId == 1, "first block project mismatch")
@@ -92,7 +92,7 @@ func runTimelineTests() {
         let blocks = TimelineBuilder.blocks(
             from: [event(.stop, entry: 1, minutes: 10)],
             now: base.addingTimeInterval(3600),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.isEmpty, "expected no blocks, got \(blocks.count)")
     }
@@ -105,7 +105,7 @@ func runTimelineTests() {
                 event(.stop, entry: 1, minutes: 50),
             ],
             now: base.addingTimeInterval(7200),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
         expect(blocks.first?.start == base.addingTimeInterval(1800), "block start mismatch")
@@ -120,7 +120,7 @@ func runTimelineTests() {
                 event(.stop, entry: 2, project: 2, minutes: 45),
             ],
             now: base.addingTimeInterval(7200),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 2, "expected 2 blocks, got \(blocks.count)")
         expect(blocks.first?.entryId == 1, "first block entry mismatch")
@@ -138,7 +138,7 @@ func runTimelineTests() {
                 event(.stop, entry: 1, minutes: 200),
             ],
             now: base.addingTimeInterval(220 * 60),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 3, "expected 3 blocks, got \(blocks.count)")
         expect(blocks[0].end == base.addingTimeInterval(2 * 60), "entry 1 should end when entry 2 starts")
@@ -150,9 +150,57 @@ func runTimelineTests() {
         let blocks = TimelineBuilder.blocks(
             from: [event(.stop, entry: 1, minutes: 30), event(.start, entry: 1, minutes: 0)],
             now: base.addingTimeInterval(7200),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
+    }
+
+    test("running entry with no start event falls back to timer started at") {
+        let startedAt = base.addingTimeInterval(600)
+        let now = base.addingTimeInterval(45 * 60)
+        let blocks = TimelineBuilder.blocks(
+            from: [],
+            now: now,
+            running: [RunningTimer(entryId: 1, projectId: 3, startedAt: startedAt)]
+        )
+        expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
+        expect(blocks.first?.start == startedAt, "block should start at timerStartedAt")
+        expect(blocks.first?.end == now, "block should end at now")
+        expect(blocks.first?.projectId == 3, "block should carry the entry's project")
+    }
+
+    test("open start event takes precedence over timer started at") {
+        let now = base.addingTimeInterval(45 * 60)
+        let blocks = TimelineBuilder.blocks(
+            from: [event(.start, entry: 1, minutes: 0)],
+            now: now,
+            running: [RunningTimer(entryId: 1, projectId: 1, startedAt: base.addingTimeInterval(300))]
+        )
+        expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
+        expect(blocks.first?.start == base, "event log start should win")
+    }
+
+    test("duplicate start events keep a single open block") {
+        let now = base.addingTimeInterval(45 * 60)
+        let blocks = TimelineBuilder.blocks(
+            from: [
+                event(.start, entry: 1, minutes: 0),
+                event(.start, entry: 1, minutes: 0),
+            ],
+            now: now,
+            running: [RunningTimer(entryId: 1, projectId: 1, startedAt: base)]
+        )
+        expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
+        expect(blocks.first?.end == now, "open block should end at now")
+    }
+
+    test("running entry without start event or timer started at shows no block") {
+        let blocks = TimelineBuilder.blocks(
+            from: [],
+            now: base.addingTimeInterval(3600),
+            running: [RunningTimer(entryId: 1, projectId: 1, startedAt: nil)]
+        )
+        expect(blocks.isEmpty, "expected no blocks, got \(blocks.count)")
     }
 
     test("start counts per entry") {
@@ -176,7 +224,7 @@ func runTimelineTests() {
                 event(.delete, entry: 1, minutes: 40),
             ],
             now: base.addingTimeInterval(3600),
-            runningEntryIds: []
+            running: []
         )
         expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
         expect(blocks.first?.end == base.addingTimeInterval(1800), "block end mismatch")

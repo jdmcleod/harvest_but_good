@@ -34,6 +34,24 @@ func runEventLogTests() {
         expect(TimelineBuilder.modifiedEntryIds(from: events) == [42, 43], "modified ids should round-trip")
     }
 
+    test("appending an identical event is ignored") {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let log = EventLog(directory: directory)
+        let start = TimerEvent(entryId: 42, action: .start, timestamp: base, projectId: 7)
+        log.append(start, day: "2026-08-06")
+        log.append(start, day: "2026-08-06")
+        log.append(
+            TimerEvent(entryId: 42, action: .start, timestamp: base.addingTimeInterval(60), projectId: 7),
+            day: "2026-08-06"
+        )
+
+        let events = log.events(forDay: "2026-08-06")
+        expect(events.count == 2, "duplicate should be dropped, got \(events.count) events")
+    }
+
     test("event log append and read round trip") {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")
