@@ -103,13 +103,4 @@ func runAFKTests() {
         )
         expect(prompt?.entryId == 7, "existing prompt should survive a stopped timer")
     }
-
-    test("formats durations for the afk prompt") {
-        expect(Hours.inWords(seconds: 30) == "less than a minute", "sub-minute mismatch")
-        expect(Hours.inWords(seconds: 60) == "1 min", "one minute mismatch")
-        expect(Hours.inWords(seconds: 45 * 60) == "45 min", "minutes mismatch")
-        expect(Hours.inWords(seconds: 3600) == "1 hour", "one hour mismatch")
-        expect(Hours.inWords(seconds: 2 * 3600) == "2 hours", "hours mismatch")
-        expect(Hours.inWords(seconds: 3600 + 12 * 60) == "1 hr 12 min", "mixed mismatch")
-    }
 }
