@@ -29,6 +29,7 @@ So here's the app Harvest should have shipped.
 - **Favorites at one click.** No dropdown safari.
 - **Search that finds things.** Type across project, client, and task names at once — `Billy Dev` turns up the Billy Graham project, and picking it lands you straight on the Development task.
 - **An actual day timeline.** A 7 AM–7 PM view with color-coded blocks for every start→stop interval, because "3.2 hours" tells you nothing about where your morning went. Harvest's own API doesn't expose these timestamps — this app logs them itself, locally.
+- **Move time where it belongs.** Logged an hour against the wrong task? Right-click the entry, pick **Move Time**, and send some or all of it elsewhere. The day's other entries come first in the list, so the usual fix is two clicks; the whole project list is underneath for everything else. Moved time merges into a matching entry instead of piling up duplicates, and a running timer keeps running — on the destination if the move empties the entry it came from.
 - **Inline notes and a full day view.** Edit entry notes in place, jump between days, and see how many times you bounced between tasks (no judgment).
 - **Syncs with Harvest every 30 seconds**, so the web and phone apps stay honest too.
 
