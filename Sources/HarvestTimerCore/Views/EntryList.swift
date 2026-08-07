@@ -55,9 +55,13 @@ struct EntryList: View {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
         .sheet(isPresented: $showingStartTimer) {
-            ProjectTaskPickerSheet(title: "Start Timer", actionLabel: "Start Timer") { assignment, task in
+            ProjectTaskPickerSheet(
+                title: "Start Timer",
+                actionLabel: "Start Timer",
+                showsNotes: true
+            ) { assignment, task, notes in
                 Task {
-                    await state.startTimer(projectId: assignment.project.id, taskId: task.id)
+                    await state.startTimer(projectId: assignment.project.id, taskId: task.id, notes: notes)
                 }
             }
         }
@@ -204,7 +208,7 @@ private struct EntryCard: View {
                 actionLabel: "Save",
                 initialProjectId: entry.project.id,
                 initialTaskId: entry.task.id
-            ) { assignment, task in
+            ) { assignment, task, _ in
                 Task {
                     await state.updateProjectTask(entry, projectId: assignment.project.id, taskId: task.id)
                 }

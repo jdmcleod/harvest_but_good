@@ -7,11 +7,14 @@ struct ProjectTaskPickerSheet: View {
     let actionLabel: String
     var initialProjectId: Int64?
     var initialTaskId: Int64?
-    let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
+    var showsNotes = false
+    let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task, String) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
+    @State private var notes = ""
     @FocusState private var searchFocused: Bool
+    @FocusState private var notesFocused: Bool
 
     private var selectedAssignment: ProjectAssignment? {
         state.projectAssignments.first { $0.id == selectedAssignmentId }
@@ -113,6 +116,24 @@ struct ProjectTaskPickerSheet: View {
                         .padding(.vertical, 12)
                 }
             }
+
+            if showsNotes {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notes (optional)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Notes", text: $notes, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.callout)
+                        .lineLimit(1...4)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.primary.opacity(notesFocused ? 0.06 : 0.035))
+                        )
+                        .focused($notesFocused)
+                }
+            }
         }
     }
 
@@ -146,7 +167,7 @@ struct ProjectTaskPickerSheet: View {
               let taskId = selectedTaskId,
               let task = assignment.taskAssignments.first(where: { $0.task.id == taskId })?.task
         else { return }
-        onConfirm(assignment, task)
+        onConfirm(assignment, task, notes)
         dismiss()
     }
 }
@@ -155,7 +176,7 @@ struct AddFavoriteSheet: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        ProjectTaskPickerSheet(title: "Add Favorite", actionLabel: "Add Favorite") { assignment, task in
+        ProjectTaskPickerSheet(title: "Add Favorite", actionLabel: "Add Favorite") { assignment, task, _ in
             state.addFavorite(Favorite(
                 projectId: assignment.project.id,
                 taskId: task.id,

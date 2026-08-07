@@ -173,21 +173,23 @@ public final class AppState {
         await startTimer(projectId: favorite.projectId, taskId: favorite.taskId)
     }
 
-    func startTimer(projectId: Int64, taskId: Int64) async {
+    func startTimer(projectId: Int64, taskId: Int64, notes: String? = nil) async {
         guard let api else { return }
         let today = dayString(.now)
+        let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         do {
             recordStopForRunningEntry()
             let entry: TimeEntry
             if let existing = entries(forDay: .now).first(where: {
-                $0.project.id == projectId && $0.task.id == taskId
+                $0.project.id == projectId && $0.task.id == taskId && ($0.notes ?? "") == notes
             }) {
                 entry = try await api.restart(entryId: existing.id)
             } else {
                 entry = try await api.startTimer(
                     projectId: projectId,
                     taskId: taskId,
-                    spentDate: today
+                    spentDate: today,
+                    notes: notes
                 )
             }
             eventLog.append(

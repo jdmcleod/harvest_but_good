@@ -86,12 +86,14 @@ struct HarvestAPI {
         return assignments
     }
 
-    func startTimer(projectId: Int64, taskId: Int64, spentDate: String) async throws -> TimeEntry {
-        try await send("time_entries", method: "POST", body: [
+    func startTimer(projectId: Int64, taskId: Int64, spentDate: String, notes: String?) async throws -> TimeEntry {
+        var body: [String: Any] = [
             "project_id": projectId,
             "task_id": taskId,
             "spent_date": spentDate,
-        ])
+        ]
+        if let notes, !notes.isEmpty { body["notes"] = notes }
+        return try await send("time_entries", method: "POST", body: body)
     }
 
     func createEntry(
