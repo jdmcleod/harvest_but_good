@@ -49,7 +49,6 @@ func runFavoriteOrderTests() {
     }
 
     test("chips between the chip and its landing place slide aside") {
-        // Dragging index 0 to index 2: 1 and 2 shuffle left, 3 stays put.
         expect(
             FavoriteOrder.displacement(of: 1, draggedFrom: 0, to: 2) == -pitch,
             "a chip passed on the way right should slide left"
@@ -63,7 +62,6 @@ func runFavoriteOrderTests() {
             "a chip beyond the landing place should not move"
         )
 
-        // Dragging index 3 to index 1: 1 and 2 shuffle right, 0 stays put.
         expect(
             FavoriteOrder.displacement(of: 2, draggedFrom: 3, to: 1) == pitch,
             "a chip passed on the way left should slide right"

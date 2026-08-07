@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct FavoriteChips: View {
-    /// The row's own coordinate space, so a drag is measured against something
-    /// that stays put while the chips move.
     static let dragSpace = "favoriteChips"
 
     @Environment(AppState.self) private var state
@@ -10,8 +8,6 @@ struct FavoriteChips: View {
     @State private var editing: Favorite?
     @State private var dragging: ChipDrag?
 
-    /// A reorder in flight: which chip, where it started, how far it has come,
-    /// and the index it would land on if the mouse came up now.
     private struct ChipDrag {
         let id: String
         let from: Int
@@ -21,9 +17,6 @@ struct FavoriteChips: View {
 
     var body: some View {
         HStack(spacing: FavoriteOrder.chipSpacing) {
-            // Enumerated for the index the drag maths needs, but keyed on the
-            // favourite's own id so a committed reorder animates instead of
-            // cutting.
             ForEach(Array(state.favorites.enumerated()), id: \.element.id) { index, favorite in
                 FavoriteChip(
                     favorite: favorite,
@@ -36,9 +29,6 @@ struct FavoriteChips: View {
                     onDragEnded: commit
                 )
                 .offset(x: offset(for: index))
-                // The chip under the pointer must track it exactly; animating it
-                // would have it chase a target that is still moving, which reads
-                // as a jitter. Its neighbours are the ones that glide.
                 .animation(
                     dragging?.id == favorite.id ? nil : .snappy(duration: 0.15),
                     value: offset(for: index)
@@ -56,10 +46,6 @@ struct FavoriteChips: View {
             .pointingCursor()
             .help("Add favorite")
         }
-        // A drag is measured against the row, which does not move. Against the
-        // chip's own space — the default — offsetting the chip would shift the
-        // origin the next translation is measured from, and the chip would
-        // oscillate instead of following the pointer.
         .coordinateSpace(name: Self.dragSpace)
         .sheet(isPresented: $showingAddSheet) {
             AddFavoriteSheet()
@@ -98,16 +84,12 @@ struct FavoriteChips: View {
     private func commit() {
         guard let drag = dragging else { return }
         dragging = nil
-        // The lifted chip is up to half a pitch from where it will settle, so
-        // the last few points are animated rather than snapped.
         withAnimation(.snappy(duration: 0.12)) {
             state.moveFavorite(from: drag.from, to: drag.to)
         }
     }
 }
 
-/// The chip itself, without any behaviour: shared with the details sheet so the
-/// preview there is the real thing rather than a lookalike.
 struct FavoriteChipLabel: View {
     let favorite: Favorite
     let filled: Bool
@@ -138,9 +120,6 @@ private struct FavoriteChip: View {
     let onDragEnded: () -> Void
 
     @State private var hovering = false
-    /// Set the moment the pointer travels far enough to be a reorder. The
-    /// button's action fires on the same mouse-up that ends the drag, and that
-    /// action starts a Harvest timer — so a drag has to be able to say no.
     @State private var moved = false
 
     private var isRunning: Bool {
@@ -161,9 +140,6 @@ private struct FavoriteChip: View {
         .buttonStyle(.plain)
         .pointingCursor()
         .simultaneousGesture(
-            // 4pt of slack: a click with a shaky hand is still a click, and a
-            // click never reaches onChanged at all. Measured against the row,
-            // not the chip, which moves.
             DragGesture(minimumDistance: 4, coordinateSpace: .named(FavoriteChips.dragSpace))
                 .onChanged { value in
                     moved = true
@@ -172,14 +148,10 @@ private struct FavoriteChip: View {
                 }
                 .onEnded { _ in
                     onDragEnded()
-                    // Cleared a turn later, not now: the button's action runs on
-                    // this same mouse-up and must still see the drag.
                     Task { @MainActor in moved = false }
                 }
         )
         .overlay(alignment: .bottom) {
-            // Suppressed for every chip while any drag is live, or a neighbour
-            // sliding under a stationary pointer pops its own tooltip.
             if hovering, !tooltipsSuppressed {
                 Text("\(favorite.projectName) · \(favorite.taskName)")
                     .font(.caption)
@@ -199,8 +171,6 @@ private struct FavoriteChip: View {
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Edit Favorite…", systemImage: "pencil", action: onEdit)
-            // Dragging is quicker, but a 14pt chip is a small thing to grab, so
-            // there is a menu path too.
             Button("Move Left", systemImage: "arrow.left") {
                 state.moveFavorite(from: index, to: index - 1)
             }

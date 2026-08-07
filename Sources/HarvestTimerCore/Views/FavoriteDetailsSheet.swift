@@ -1,20 +1,15 @@
 import SwiftUI
 
-/// The nickname and colour of a favourite. The second step of adding one, and
-/// the whole of editing one, so both routes look and behave the same.
 struct FavoriteDetailsSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     let favorite: Favorite
-    /// Adding saves a new favourite; editing replaces one in place.
     let isNew: Bool
 
     @State private var nickname = ""
     @State private var colorIndex: Int?
     @FocusState private var nicknameFocused: Bool
 
-    /// What the chip would read with no nickname at all — shown as the
-    /// placeholder so it is clear what leaving the field empty gets you.
     private var derivedLabel: String {
         var stripped = favorite
         stripped.nickname = nil
@@ -76,9 +71,6 @@ struct FavoriteDetailsSheet: View {
                 .frame(width: 120)
                 .focused($nicknameFocused)
                 .onChange(of: nickname) { _, new in
-                    // Truncated as typed rather than validated on save: the chip
-                    // physically cannot show more, so there is nothing to warn
-                    // about.
                     if new.count > Favorite.maxLabelLength {
                         nickname = String(new.prefix(Favorite.maxLabelLength))
                     }
@@ -113,9 +105,6 @@ struct FavoriteDetailsSheet: View {
             .frame(width: 18, height: 18)
             .overlay {
                 if index == nil {
-                    // The default swatch is the project colour, so it needs a
-                    // mark of its own to tell it from the palette entry that
-                    // happens to match.
                     Image(systemName: "a.circle")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.white)
@@ -126,8 +115,6 @@ struct FavoriteDetailsSheet: View {
                     .strokeBorder(isSelected ? Color.primary : .clear, lineWidth: 2)
                     .padding(-3)
             }
-            // A gesture, not a Button: the nickname field is focused, and AppKit
-            // spends the first click on a Button resigning the field editor.
             .contentShape(Circle())
             .onTapGesture { colorIndex = index }
             .accessibilityAddTraits(.isButton)

@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Adding a favourite in two steps inside one sheet: which project and task,
-/// then what the chip should look like. Two steps in one sheet rather than a
-/// sheet presenting a sheet, which macOS handles badly.
 struct AddFavoriteSheet: View {
     @State private var draft: Favorite?
 

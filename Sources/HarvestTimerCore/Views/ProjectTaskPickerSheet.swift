@@ -10,8 +10,6 @@ struct ProjectTaskPickerSheet: View {
     /// Starting a timer can say what the time is for; editing an entry cannot,
     /// because the card already has a notes box of its own.
     var showsNotes = false
-    /// Adding a favourite carries on to a second step in the same sheet, so it
-    /// keeps the sheet open and dismisses itself later.
     var dismissesOnConfirm = true
     let onConfirm: (ProjectAssignment, NamedRef, String) -> Void
     @State private var search = ""
