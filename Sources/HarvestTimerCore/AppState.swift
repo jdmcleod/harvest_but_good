@@ -79,15 +79,7 @@ public final class AppState {
         Self.dayFormatter.string(from: date)
     }
 
-    public var weekDays: [Date] {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: selectedDay)
-        let daysFromMonday = (weekday + 5) % 7
-        let monday = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: -daysFromMonday, to: selectedDay)!
-        )
-        return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
-    }
+    public var weekDays: [Date] { weekDaysContaining(selectedDay) }
 
     public func entries(forDay day: Date) -> [TimeEntry] {
         entries(onDate: dayString(day))
@@ -261,9 +253,7 @@ public final class AppState {
     public func saveNotes(_ entry: TimeEntry, notes: String) async {
         guard let api, notes != (entry.notes ?? "") else { return }
         do {
-            let updated = try await api.updateNotes(entryId: entry.id, notes: notes)
-            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
-                .map { $0.id == updated.id ? updated : $0 }
+            apply(try await api.updateNotes(entryId: entry.id, notes: notes))
         } catch {
             syncError = error.localizedDescription
         }
@@ -273,12 +263,8 @@ public final class AppState {
         guard let api else { return }
         do {
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
-                day: entry.spentDate
-            )
-            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
-                .map { $0.id == updated.id ? updated : $0 }
+            logEdit(updated)
+            apply(updated)
         } catch {
             syncError = error.localizedDescription
         }
@@ -293,12 +279,8 @@ public final class AppState {
                 projectId: projectId,
                 taskId: taskId
             )
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: updated.project.id),
-                day: entry.spentDate
-            )
-            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
-                .map { $0.id == updated.id ? updated : $0 }
+            logEdit(updated)
+            apply(updated)
         } catch {
             syncError = error.localizedDescription
         }
@@ -333,7 +315,7 @@ public final class AppState {
                     entryId: destination.id,
                     hours: destination.hours + plan.moved
                 )
-                logEdit(destination)
+                logEdit(updated)
                 apply(updated)
             } else {
                 let created = try await api.createEntry(
@@ -364,6 +346,8 @@ public final class AppState {
         }
     }
 
+    /// Notes that an entry's duration or booking changed, so the timeline can
+    /// stripe it — its blocks no longer add up to its hours.
     private func logEdit(_ entry: TimeEntry) {
         eventLog.append(
             TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
@@ -401,10 +385,7 @@ public final class AppState {
         let hours = max(0, liveHours(for: entry) - prompt.duration(now: .now) / 3600)
         do {
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
-                day: entry.spentDate
-            )
+            logEdit(updated)
             apply(updated)
             await sync()
         } catch {
