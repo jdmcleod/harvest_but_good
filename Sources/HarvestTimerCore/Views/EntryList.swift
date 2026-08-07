@@ -70,6 +70,7 @@ private struct EntryCard: View {
     let startCount: Int
     @State private var notes: String
     @State private var confirmingDelete = false
+    @State private var editingProjectTask = false
     @State private var editingHours = false
     @State private var hoursText = ""
     @FocusState private var notesFocused: Bool
@@ -95,6 +96,9 @@ private struct EntryCard: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { editingProjectTask = true }
+                    .help("Double-click to change project or task")
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
                         if editingHours {
@@ -187,6 +191,18 @@ private struct EntryCard: View {
         .contextMenu {
             Button("Delete Entry…", systemImage: "trash", role: .destructive) {
                 confirmingDelete = true
+            }
+        }
+        .sheet(isPresented: $editingProjectTask) {
+            ProjectTaskPickerSheet(
+                title: "Edit Entry",
+                actionLabel: "Save",
+                initialProjectId: entry.project.id,
+                initialTaskId: entry.task.id
+            ) { assignment, task in
+                Task {
+                    await state.updateProjectTask(entry, projectId: assignment.project.id, taskId: task.id)
+                }
             }
         }
         .confirmationDialog(

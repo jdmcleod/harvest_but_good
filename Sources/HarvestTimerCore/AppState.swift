@@ -149,6 +149,7 @@ public final class AppState {
             )
             now = .now
             lastSyncAt = now
+            let previousRunning = runningEntry
             var grouped: [String: [TimeEntry]] = [:]
             for entry in entries {
                 grouped[entry.spentDate, default: []].append(entry)
@@ -156,6 +157,7 @@ public final class AppState {
             for day in dayRange(from: sortedDays.first!, to: sortedDays.last!) {
                 entriesByDay[day] = grouped[day] ?? []
             }
+            recordExternalTimerChange(from: previousRunning, to: runningEntry)
             syncError = nil
         } catch {
             syncError = error.localizedDescription
@@ -247,6 +249,26 @@ public final class AppState {
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
             eventLog.append(
                 TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
+                day: entry.spentDate
+            )
+            entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
+                .map { $0.id == updated.id ? updated : $0 }
+        } catch {
+            syncError = error.localizedDescription
+        }
+    }
+
+    func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
+        guard let api,
+              entry.project.id != projectId || entry.task.id != taskId else { return }
+        do {
+            let updated = try await api.updateProjectTask(
+                entryId: entry.id,
+                projectId: projectId,
+                taskId: taskId
+            )
+            eventLog.append(
+                TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: updated.project.id),
                 day: entry.spentDate
             )
             entriesByDay[updated.spentDate] = (entriesByDay[updated.spentDate] ?? [])
@@ -372,6 +394,27 @@ public final class AppState {
             day.append(updated)
         }
         entriesByDay[updated.spentDate] = day
+    }
+
+    private func recordExternalTimerChange(from previous: TimeEntry?, to current: TimeEntry?) {
+        guard previous?.id != current?.id else { return }
+        if let previous {
+            eventLog.append(
+                TimerEvent(entryId: previous.id, action: .stop, timestamp: now, projectId: previous.project.id),
+                day: previous.spentDate
+            )
+        }
+        if let current {
+            eventLog.append(
+                TimerEvent(
+                    entryId: current.id,
+                    action: .start,
+                    timestamp: current.timerStartedAt ?? now,
+                    projectId: current.project.id
+                ),
+                day: current.spentDate
+            )
+        }
     }
 
     private func recordStopForRunningEntry() {

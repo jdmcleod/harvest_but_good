@@ -125,7 +125,7 @@ test("stop without start is ignored") {
     expect(blocks.isEmpty, "expected no blocks, got \(blocks.count)")
 }
 
-test("duplicate start closes the previous block") {
+test("duplicate start drops the dangling block instead of filling the gap") {
     let blocks = TimelineBuilder.blocks(
         from: [
             event(.start, entry: 1, minutes: 0),
@@ -135,9 +135,43 @@ test("duplicate start closes the previous block") {
         now: base.addingTimeInterval(7200),
         runningEntryIds: []
     )
+    expect(blocks.count == 1, "expected 1 block, got \(blocks.count)")
+    expect(blocks.first?.start == base.addingTimeInterval(1800), "block start mismatch")
+    expect(blocks.first?.end == base.addingTimeInterval(3000), "block end mismatch")
+}
+
+test("starting another entry closes the open block at that moment") {
+    let blocks = TimelineBuilder.blocks(
+        from: [
+            event(.start, entry: 1, project: 1, minutes: 0),
+            event(.start, entry: 2, project: 2, minutes: 20),
+            event(.stop, entry: 2, project: 2, minutes: 45),
+        ],
+        now: base.addingTimeInterval(7200),
+        runningEntryIds: []
+    )
     expect(blocks.count == 2, "expected 2 blocks, got \(blocks.count)")
-    expect(blocks.first?.end == base.addingTimeInterval(1800), "first block end mismatch")
-    expect(blocks.last?.end == base.addingTimeInterval(3000), "second block end mismatch")
+    expect(blocks.first?.entryId == 1, "first block entry mismatch")
+    expect(blocks.first?.end == base.addingTimeInterval(1200), "entry 1 should end when entry 2 starts")
+    expect(blocks.last?.end == base.addingTimeInterval(2700), "entry 2 end mismatch")
+}
+
+test("restarting an entry with a lost stop does not fill the idle gap") {
+    let blocks = TimelineBuilder.blocks(
+        from: [
+            event(.start, entry: 1, minutes: 0),
+            event(.start, entry: 2, minutes: 2),
+            event(.stop, entry: 2, minutes: 7),
+            event(.start, entry: 1, minutes: 195),
+            event(.stop, entry: 1, minutes: 200),
+        ],
+        now: base.addingTimeInterval(220 * 60),
+        runningEntryIds: []
+    )
+    expect(blocks.count == 3, "expected 3 blocks, got \(blocks.count)")
+    expect(blocks[0].end == base.addingTimeInterval(2 * 60), "entry 1 should end when entry 2 starts")
+    expect(blocks[2].start == base.addingTimeInterval(195 * 60), "restart should open a fresh block")
+    expect(blocks[2].end == base.addingTimeInterval(200 * 60), "restart block end mismatch")
 }
 
 test("unsorted events are ordered by timestamp") {

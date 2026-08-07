@@ -5,10 +5,26 @@ struct ProjectTaskPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
     let actionLabel: String
+    let initialProjectId: Int64?
+    let initialTaskId: Int64?
     let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
+
+    init(
+        title: String,
+        actionLabel: String,
+        initialProjectId: Int64? = nil,
+        initialTaskId: Int64? = nil,
+        onConfirm: @escaping (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
+    ) {
+        self.title = title
+        self.actionLabel = actionLabel
+        self.initialProjectId = initialProjectId
+        self.initialTaskId = initialTaskId
+        self.onConfirm = onConfirm
+    }
 
     private var selectedAssignment: ProjectAssignment? {
         state.projectAssignments.first { $0.id == selectedAssignmentId }
@@ -41,6 +57,7 @@ struct ProjectTaskPickerSheet: View {
         .frame(width: 460)
         .task {
             await state.loadProjectAssignments()
+            applyInitialSelection()
         }
     }
 
@@ -123,6 +140,15 @@ struct ProjectTaskPickerSheet: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(.separator)
         )
+    }
+
+    private func applyInitialSelection() {
+        guard selectedAssignmentId == nil,
+              let initialProjectId,
+              let assignment = state.projectAssignments.first(where: { $0.project.id == initialProjectId })
+        else { return }
+        selectedAssignmentId = assignment.id
+        selectedTaskId = initialTaskId
     }
 
     private func select(_ assignment: ProjectAssignment) {
