@@ -22,6 +22,7 @@ public final class AppState {
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
+    private var lastActivityAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
     private let eventLog = EventLog(directory: EventLog.defaultDirectory)
@@ -382,11 +383,19 @@ public final class AppState {
         afkPrompt = nil
     }
 
+    /// Takes the away time off the entry that was running and puts it on
+    /// another project and task instead.
+    func moveAFKTime(projectId: Int64, taskId: Int64) async {
+        guard let prompt = afkPrompt, let entry = entry(withId: prompt.entryId) else { return }
+        afkPrompt = nil
+        await moveTime(entry, hours: prompt.duration / 3600, projectId: projectId, taskId: taskId)
+    }
+
     func removeAFKTime() async {
         guard let api, let prompt = afkPrompt else { return }
         afkPrompt = nil
         guard let entry = entry(withId: prompt.entryId) else { return }
-        let hours = max(0, liveHours(for: entry) - prompt.duration(now: .now) / 3600)
+        let hours = max(0, liveHours(for: entry) - prompt.duration / 3600)
         do {
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
             eventLog.append(
@@ -401,13 +410,15 @@ public final class AppState {
     }
 
     private func checkAFK() {
+        let currentActivity = Date.now.addingTimeInterval(-idleSeconds())
         let updated = AFKDetector.evaluate(
             prompt: afkPrompt,
-            idleSeconds: idleSeconds(),
+            lastActivity: lastActivityAt,
+            currentActivity: currentActivity,
             toleranceSeconds: Double(afkToleranceMinutes) * 60,
-            runningEntryId: runningEntry?.id,
-            now: .now
+            runningEntryId: runningEntry?.id
         )
+        lastActivityAt = max(lastActivityAt, currentActivity)
         let isNew = updated != nil && afkPrompt == nil
         afkPrompt = updated
         if isNew { onAFKDetected?() }

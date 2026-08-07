@@ -4,46 +4,57 @@ import Foundation
 public struct AFKPrompt: Equatable, Identifiable {
     public let entryId: Int64
     public let start: Date
-    public var returnedAt: Date?
+    public let end: Date
 
     public var id: Double { start.timeIntervalSince1970 }
 
-    public init(entryId: Int64, start: Date, returnedAt: Date? = nil) {
+    public init(entryId: Int64, start: Date, end: Date) {
         self.entryId = entryId
         self.start = start
-        self.returnedAt = returnedAt
+        self.end = end
     }
 
-    public func duration(now: Date) -> TimeInterval {
-        max(0, (returnedAt ?? now).timeIntervalSince(start))
-    }
+    public var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
 }
 
 public enum AFKDetector {
+    /// Prompts on the way back rather than while away: a gap between the input
+    /// we saw last time and the input we see now is the time nobody was here.
+    /// A sleeping laptop stops the polling but not the gap, so a closed lid is
+    /// caught the moment the mouse moves again. An open prompt never changes —
+    /// it waits for an answer.
     public static func evaluate(
         prompt: AFKPrompt?,
-        idleSeconds: TimeInterval,
+        lastActivity: Date,
+        currentActivity: Date,
         toleranceSeconds: TimeInterval,
-        runningEntryId: Int64?,
-        now: Date
+        runningEntryId: Int64?
     ) -> AFKPrompt? {
-        let lastActivity = now.addingTimeInterval(-idleSeconds)
-        if var prompt {
-            if prompt.returnedAt == nil, lastActivity > prompt.start.addingTimeInterval(1) {
-                prompt.returnedAt = lastActivity
-            }
-            return prompt
-        }
+        if let prompt { return prompt }
         guard toleranceSeconds > 0,
               let runningEntryId,
-              idleSeconds >= toleranceSeconds else { return nil }
-        return AFKPrompt(entryId: runningEntryId, start: lastActivity)
+              currentActivity.timeIntervalSince(lastActivity) >= toleranceSeconds
+        else { return nil }
+        return AFKPrompt(entryId: runningEntryId, start: lastActivity, end: currentActivity)
     }
 }
 
+/// Seconds since the last mouse or keyboard event. Only real input counts —
+/// `.combinedSessionState` on its own also ticks for events the machine
+/// generates while nobody is at the desk.
 public func systemIdleSeconds() -> TimeInterval {
-    let anyInput = CGEventType(rawValue: ~0)!
-    return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+    let inputTypes: [CGEventType] = [
+        .mouseMoved,
+        .leftMouseDown,
+        .rightMouseDown,
+        .otherMouseDown,
+        .scrollWheel,
+        .keyDown,
+        .flagsChanged,
+    ]
+    return inputTypes
+        .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
+        .min() ?? 0
 }
 
 public func formattedDuration(_ seconds: TimeInterval) -> String {

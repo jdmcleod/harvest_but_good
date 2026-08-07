@@ -68,7 +68,7 @@ struct MoveTimeSheet: View {
     private var destinationStep: some View {
         Group {
             TextField("Search this day's entries or all projects…", text: $search)
-                .textFieldStyle(.roundedBorder)
+                .pickerSearchFieldStyle()
 
             PickerListBox {
                 if !dayEntries.isEmpty {
