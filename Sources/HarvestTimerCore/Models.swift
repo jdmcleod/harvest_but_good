@@ -22,6 +22,28 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
     public let task: NamedRef
     public let client: NamedRef
     public let timerStartedAt: Date?
+
+    public init(
+        id: Int64,
+        spentDate: String,
+        hours: Double,
+        notes: String? = nil,
+        isRunning: Bool = false,
+        project: NamedRef,
+        task: NamedRef,
+        client: NamedRef,
+        timerStartedAt: Date? = nil
+    ) {
+        self.id = id
+        self.spentDate = spentDate
+        self.hours = hours
+        self.notes = notes
+        self.isRunning = isRunning
+        self.project = project
+        self.task = task
+        self.client = client
+        self.timerStartedAt = timerStartedAt
+    }
 }
 
 public struct TimeEntriesPage: Codable {
@@ -32,12 +54,28 @@ public struct TimeEntriesPage: Codable {
 public struct ProjectAssignment: Codable, Identifiable {
     public struct TaskAssignment: Codable {
         public let task: NamedRef
+
+        public init(task: NamedRef) {
+            self.task = task
+        }
     }
 
     public let id: Int64
     public let project: NamedRef
     public let client: NamedRef
     public let taskAssignments: [TaskAssignment]
+
+    public init(
+        id: Int64,
+        project: NamedRef,
+        client: NamedRef,
+        taskAssignments: [TaskAssignment]
+    ) {
+        self.id = id
+        self.project = project
+        self.client = client
+        self.taskAssignments = taskAssignments
+    }
 }
 
 public struct ProjectAssignmentsPage: Codable {

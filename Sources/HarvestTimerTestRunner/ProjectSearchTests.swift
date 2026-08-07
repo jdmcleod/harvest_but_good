@@ -1,29 +1,22 @@
 import Foundation
 import HarvestTimerCore
 
-/// Builds an assignment through JSON, since the model has no public init.
 func assignment(
     id: Int64,
     client: String,
     project: String,
     tasks: [String]
 ) -> ProjectAssignment {
-    let taskJSON = tasks.enumerated().map { index, name in
-        """
-        {"task": {"id": \(id * 100 + Int64(index)), "name": "\(name)"}}
-        """
-    }.joined(separator: ",")
-    let json = """
-    {
-      "id": \(id),
-      "project": {"id": \(id), "name": "\(project)"},
-      "client": {"id": \(id), "name": "\(client)"},
-      "task_assignments": [\(taskJSON)]
-    }
-    """
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try! decoder.decode(ProjectAssignment.self, from: Data(json.utf8))
+    ProjectAssignment(
+        id: id,
+        project: NamedRef(id: id, name: project),
+        client: NamedRef(id: id, name: client),
+        taskAssignments: tasks.enumerated().map { index, name in
+            ProjectAssignment.TaskAssignment(
+                task: NamedRef(id: id * 100 + Int64(index), name: name)
+            )
+        }
+    )
 }
 
 let searchFixtures = [
