@@ -393,6 +393,29 @@ func runFavoritesTests() async {
         }
     }
 
+    await test("the same favorite is not added twice, even after a rename") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.addFavorite(favorite)
+            state.addFavorite(favorite)
+            expect(state.favorites.count == 1, "adding it again should do nothing")
+
+            // Harvest renamed the project. It is the same project and task.
+            let renamed = Favorite(
+                projectId: favorite.projectId,
+                taskId: favorite.taskId,
+                clientName: favorite.clientName,
+                projectName: "Project 10 — 2026 Maintenance",
+                taskName: favorite.taskName
+            )
+            state.addFavorite(renamed)
+            expect(state.favorites.count == 1, "a rename should not make a second favorite")
+
+            state.removeFavorite(renamed)
+            expect(state.favorites.isEmpty, "removing by the renamed copy should still work")
+        }
+    }
+
     await test("starting a favorite starts its project and task") {
         try await withTemporaryDirectory { directory in
             let fake = FakeHarvest()

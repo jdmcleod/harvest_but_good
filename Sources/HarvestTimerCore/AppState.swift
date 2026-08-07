@@ -402,7 +402,9 @@ public final class AppState {
     }
 
     public func addFavorite(_ favorite: Favorite) {
-        guard !favorites.contains(favorite) else { return }
+        // Matched by id, not by every field: a project renamed in Harvest is
+        // still the same favorite.
+        guard !favorites.contains(where: { $0.id == favorite.id }) else { return }
         favorites.append(favorite)
         favoritesStore.save(favorites)
     }
