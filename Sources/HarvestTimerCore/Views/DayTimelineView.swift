@@ -15,8 +15,9 @@ struct DayTimelineView: View {
     @State private var markerY: CGFloat = 0
     @State private var hasAppliedDefaultView = false
 
-    private let startHour = 7
-    private let endHour = 19
+    private let scale = DayScale()
+    private var startHour: Int { scale.startHour }
+    private var endHour: Int { scale.endHour }
     private let labelWidth: CGFloat = 44
     private let minZoom: CGFloat = 1
     private let maxZoom: CGFloat = 8
@@ -168,10 +169,10 @@ struct DayTimelineView: View {
     private func applyDefaultView(viewportHeight: CGFloat, proxy: ScrollViewProxy) {
         guard !hasAppliedDefaultView, viewportHeight > 0 else { return }
         hasAppliedDefaultView = true
-        let totalHours = CGFloat(endHour - startHour)
+        let totalHours = CGFloat(scale.hourCount)
         let isAfternoon = Calendar.current.component(.hour, from: state.now) >= 12
-        let visibleHours: CGFloat = isAfternoon ? 8 : 3
-        zoom = min(max(totalHours / visibleHours, minZoom), maxZoom)
+        let visibleHours: Double = isAfternoon ? 8 : 3
+        zoom = CGFloat(scale.zoom(toShow: visibleHours, min: Double(minZoom), max: Double(maxZoom)))
         markerY = (defaultTopHour - CGFloat(startHour)) / totalHours * viewportHeight * zoom
         DispatchQueue.main.async {
             proxy.scrollTo(scrollMarkerId, anchor: .top)
@@ -185,13 +186,7 @@ struct DayTimelineView: View {
     }
 
     private func yPosition(for date: Date, height: CGFloat) -> CGFloat {
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: date)
-        let seconds = date.timeIntervalSince(dayStart)
-        let startSeconds = Double(startHour * 3600)
-        let range = Double((endHour - startHour) * 3600)
-        let fraction = (seconds - startSeconds) / range
-        return CGFloat(min(max(fraction, 0), 1)) * height
+        CGFloat(scale.position(of: date, height: Double(height)))
     }
 
     @ViewBuilder
@@ -309,14 +304,11 @@ struct DayTimelineView: View {
     }
 
     private func hourLabel(_ hour: Int) -> String {
-        let display = hour % 12 == 0 ? 12 : hour % 12
-        return "\(display) \(hour < 12 ? "AM" : "PM")"
+        scale.hourLabel(hour)
     }
 
     private func quarterLabel(_ quarter: Int) -> String {
-        let hour = startHour + quarter / 4
-        let display = hour % 12 == 0 ? 12 : hour % 12
-        return "\(display):\(quarter % 4 * 15)"
+        scale.quarterLabel(quarter)
     }
 
     private func timeRange(_ block: TimelineBlock) -> String {
