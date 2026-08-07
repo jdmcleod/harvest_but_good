@@ -25,6 +25,12 @@ public struct HarvestAPI: HarvestClient {
 
     private static let baseURL = URL(string: "https://api.harvestapp.com/v2")!
 
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }()
+
     private static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -87,11 +93,12 @@ public struct HarvestAPI: HarvestClient {
     }
 
     public func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry {
-        try await send("time_entries", method: "POST", body: [
-            "project_id": projectId,
-            "task_id": taskId,
-            "spent_date": spentDate.name,
-        ])
+        // No hours, so Harvest starts it running.
+        try await send("time_entries", method: "POST", body: EntryFields(
+            projectId: projectId,
+            taskId: taskId,
+            spentDate: spentDate
+        ))
     }
 
     public func createEntry(
@@ -101,14 +108,13 @@ public struct HarvestAPI: HarvestClient {
         hours: Double,
         notes: String?
     ) async throws -> TimeEntry {
-        var body: [String: Any] = [
-            "project_id": projectId,
-            "task_id": taskId,
-            "spent_date": spentDate.name,
-            "hours": hours,
-        ]
-        if let notes, !notes.isEmpty { body["notes"] = notes }
-        return try await send("time_entries", method: "POST", body: body)
+        try await send("time_entries", method: "POST", body: EntryFields(
+            projectId: projectId,
+            taskId: taskId,
+            spentDate: spentDate,
+            hours: hours,
+            notes: notes.flatMap { $0.isEmpty ? nil : $0 }
+        ))
     }
 
     public func restart(entryId: Int64) async throws -> TimeEntry {
@@ -120,22 +126,33 @@ public struct HarvestAPI: HarvestClient {
     }
 
     public func updateHours(entryId: Int64, hours: Double) async throws -> TimeEntry {
-        try await send("time_entries/\(entryId)", method: "PATCH", body: ["hours": hours])
+        try await send("time_entries/\(entryId)", method: "PATCH", body: EntryFields(hours: hours))
     }
 
     public func updateProjectTask(entryId: Int64, projectId: Int64, taskId: Int64) async throws -> TimeEntry {
-        try await send("time_entries/\(entryId)", method: "PATCH", body: [
-            "project_id": projectId,
-            "task_id": taskId,
-        ])
+        try await send("time_entries/\(entryId)", method: "PATCH", body: EntryFields(
+            projectId: projectId,
+            taskId: taskId
+        ))
     }
 
     public func updateNotes(entryId: Int64, notes: String) async throws -> TimeEntry {
-        try await send("time_entries/\(entryId)", method: "PATCH", body: ["notes": notes])
+        try await send("time_entries/\(entryId)", method: "PATCH", body: EntryFields(notes: notes))
     }
 
     public func deleteEntry(entryId: Int64) async throws {
         _ = try await rawRequest("time_entries/\(entryId)", method: "DELETE", query: [:], body: nil)
+    }
+
+    /// The fields of a time entry Harvest lets us write. Every one is
+    /// optional: a PATCH sends only what it means to change, and the encoder
+    /// leaves the rest out.
+    private struct EntryFields: Encodable {
+        var projectId: Int64?
+        var taskId: Int64?
+        var spentDate: Day?
+        var hours: Double?
+        var notes: String?
     }
 
     private func get<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
@@ -145,16 +162,21 @@ public struct HarvestAPI: HarvestClient {
     private func send<T: Decodable>(
         _ path: String,
         method: String,
-        body: [String: Any]? = nil
+        body: (some Encodable)? = Optional<EntryFields>.none
     ) async throws -> T {
-        try await request(path, method: method, query: [:], body: body)
+        try await request(
+            path,
+            method: method,
+            query: [:],
+            body: try body.map(Self.encoder.encode)
+        )
     }
 
     private func request<T: Decodable>(
         _ path: String,
         method: String,
         query: [String: String],
-        body: [String: Any]?
+        body: Data?
     ) async throws -> T {
         let data = try await rawRequest(path, method: method, query: query, body: body)
         return try Self.decoder.decode(T.self, from: data)
@@ -164,7 +186,7 @@ public struct HarvestAPI: HarvestClient {
         _ path: String,
         method: String,
         query: [String: String],
-        body: [String: Any]?
+        body: Data?
     ) async throws -> Data {
         var components = URLComponents(
             url: Self.baseURL.appendingPathComponent(path),
@@ -181,7 +203,7 @@ public struct HarvestAPI: HarvestClient {
         request.setValue("HarvestTimer (https://github.com/jdmcleod/harvest_but_good)", forHTTPHeaderField: "User-Agent")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = body
         }
 
         let data: Data
