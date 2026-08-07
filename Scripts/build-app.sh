@@ -45,8 +45,29 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-SIGN_IDENTITY="${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')}"
-codesign --force --sign "${SIGN_IDENTITY:--}" "$APP_DIR"
+# A stable identity keeps the signature the same between builds, so the
+# Keychain doesn't ask for your password after every rebuild. Prefer a real
+# Apple identity, then the self-signed one from Scripts/create-signing-cert.sh.
+find_identity() {
+    security find-identity -v -p codesigning \
+        | awk -F'"' -v want="$1" '$0 ~ want {print $2; exit}'
+}
+
+SIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="$(find_identity 'Apple Development')"
+fi
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="$(find_identity 'HarvestButGood Dev')"
+fi
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="-"
+    echo "Warning: no signing identity, falling back to ad-hoc signing."
+    echo "         The Keychain will prompt again after every rebuild."
+    echo "         Run Scripts/create-signing-cert.sh once to stop that."
+fi
+
+codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"
 
 echo "Built $APP_DIR"
 echo "Run it with:      open \"$APP_DIR\""

@@ -27,6 +27,7 @@ So here's the app Harvest should have shipped.
 
 - **Menu bar first.** No Dock icon, no window clutter. Today's total hours sit right next to a tidy timer icon.
 - **Favorites at one click.** No dropdown safari.
+- **Search that finds things.** Type across project, client, and task names at once — `Billy Dev` turns up the Billy Graham project, and picking it lands you straight on the Development task.
 - **An actual day timeline.** A 7 AM–7 PM view with color-coded blocks for every start→stop interval, because "3.2 hours" tells you nothing about where your morning went. Harvest's own API doesn't expose these timestamps — this app logs them itself, locally.
 - **Inline notes and a full day view.** Edit entry notes in place, jump between days, and see how many times you bounced between tasks (no judgment).
 - **Syncs with Harvest every 30 seconds**, so the web and phone apps stay honest too.
@@ -42,12 +43,21 @@ So here's the app Harvest should have shipped.
 ```sh
 git clone git@github.com:jdmcleod/harvest_but_good.git
 cd harvest_but_good
+Scripts/create-signing-cert.sh   # once — see below
 Scripts/build-app.sh
-cp -R dist/HarvestTimer.app /Applications/
-open /Applications/HarvestTimer.app
+cp -R dist/HarvestButGood.app /Applications/
+open /Applications/HarvestButGood.app
 ```
 
 That's it. Look up — it's in your menu bar.
+
+### Why the certificate
+
+Without a signing identity the app gets an ad-hoc signature, which changes with every build. macOS then treats each build as a different app and asks for your Keychain password again — every time.
+
+`Scripts/create-signing-cert.sh` makes a self-signed code-signing certificate called `HarvestButGood Dev`, puts it in your login Keychain, and marks it trusted (one `sudo` prompt). `Scripts/build-app.sh` picks it up automatically. Already have an Apple Development certificate? Skip the script — the build prefers that one, or whatever you set in `CODESIGN_IDENTITY`.
+
+The first launch after signing still asks for the Keychain once. Click **Always Allow** and it stays quiet from then on.
 
 ## Connect to Harvest
 
