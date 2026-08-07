@@ -1,12 +1,14 @@
 import SwiftUI
 
-struct ProjectTaskPickerSheet: View {
+struct ProjectTaskPickerSheet<Accessory: View>: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     let title: String
     let actionLabel: String
     let initialProjectId: Int64?
     let initialTaskId: Int64?
+    let confirmEnabled: Bool
+    let accessory: () -> Accessory
     let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
@@ -18,12 +20,16 @@ struct ProjectTaskPickerSheet: View {
         actionLabel: String,
         initialProjectId: Int64? = nil,
         initialTaskId: Int64? = nil,
+        confirmEnabled: Bool = true,
+        @ViewBuilder accessory: @escaping () -> Accessory,
         onConfirm: @escaping (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
     ) {
         self.title = title
         self.actionLabel = actionLabel
         self.initialProjectId = initialProjectId
         self.initialTaskId = initialTaskId
+        self.confirmEnabled = confirmEnabled
+        self.accessory = accessory
         self.onConfirm = onConfirm
     }
 
@@ -46,12 +52,14 @@ struct ProjectTaskPickerSheet: View {
                 projectStep
             }
 
+            accessory()
+
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button(actionLabel) { confirm() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(selectedAssignment == nil || selectedTaskId == nil)
+                    .disabled(selectedAssignment == nil || selectedTaskId == nil || !confirmEnabled)
             }
         }
         .padding(20)
@@ -180,6 +188,73 @@ struct ProjectTaskPickerSheet: View {
         else { return }
         onConfirm(assignment, task)
         dismiss()
+    }
+}
+
+extension ProjectTaskPickerSheet where Accessory == EmptyView {
+    init(
+        title: String,
+        actionLabel: String,
+        initialProjectId: Int64? = nil,
+        initialTaskId: Int64? = nil,
+        onConfirm: @escaping (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
+    ) {
+        self.init(
+            title: title,
+            actionLabel: actionLabel,
+            initialProjectId: initialProjectId,
+            initialTaskId: initialTaskId,
+            accessory: { EmptyView() },
+            onConfirm: onConfirm
+        )
+    }
+}
+
+/// Moves some of an entry's time onto another project and task.
+struct MoveTimeSheet: View {
+    @Environment(AppState.self) private var state
+    let entry: TimeEntry
+    @State private var amountText: String
+
+    init(entry: TimeEntry) {
+        self.entry = entry
+        _amountText = State(initialValue: formattedHours(entry.hours))
+    }
+
+    private var amount: Double? {
+        guard let hours = parseHours(amountText), hours > 0 else { return nil }
+        return hours
+    }
+
+    var body: some View {
+        ProjectTaskPickerSheet(
+            title: "Move Time",
+            actionLabel: "Move",
+            confirmEnabled: amount != nil,
+            accessory: {
+                HStack(spacing: 8) {
+                    Text("Move")
+                    TextField("0:00", text: $amountText)
+                        .textFieldStyle(.roundedBorder)
+                        .monospacedDigit()
+                        .frame(width: 70)
+                    Text("of \(formattedHours(entry.hours)) from \(entry.task.name)")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .font(.callout)
+            }
+        ) { assignment, task in
+            guard let amount else { return }
+            Task {
+                await state.moveTime(
+                    entry,
+                    hours: amount,
+                    projectId: assignment.project.id,
+                    taskId: task.id
+                )
+            }
+        }
     }
 }
 

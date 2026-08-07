@@ -71,6 +71,7 @@ private struct EntryCard: View {
     @State private var notes: String
     @State private var confirmingDelete = false
     @State private var editingProjectTask = false
+    @State private var movingTime = false
     @State private var editingHours = false
     @State private var hoursText = ""
     @FocusState private var notesFocused: Bool
@@ -189,6 +190,11 @@ private struct EntryCard: View {
         )
         .contentShape(Rectangle())
         .contextMenu {
+            Button("Move Time…", systemImage: "arrow.right.arrow.left") {
+                movingTime = true
+            }
+            .disabled(entry.isRunning)
+            .help(entry.isRunning ? "Stop the timer to move its time" : "Move time to another task")
             Button("Delete Entry…", systemImage: "trash", role: .destructive) {
                 confirmingDelete = true
             }
@@ -204,6 +210,9 @@ private struct EntryCard: View {
                     await state.updateProjectTask(entry, projectId: assignment.project.id, taskId: task.id)
                 }
             }
+        }
+        .sheet(isPresented: $movingTime) {
+            MoveTimeSheet(entry: entry)
         }
         .confirmationDialog(
             "Delete this time entry?",

@@ -94,6 +94,23 @@ struct HarvestAPI {
         ])
     }
 
+    func createEntry(
+        projectId: Int64,
+        taskId: Int64,
+        spentDate: String,
+        hours: Double,
+        notes: String?
+    ) async throws -> TimeEntry {
+        var body: [String: Any] = [
+            "project_id": projectId,
+            "task_id": taskId,
+            "spent_date": spentDate,
+            "hours": hours,
+        ]
+        if let notes, !notes.isEmpty { body["notes"] = notes }
+        return try await send("time_entries", method: "POST", body: body)
+    }
+
     func restart(entryId: Int64) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)/restart", method: "PATCH")
     }

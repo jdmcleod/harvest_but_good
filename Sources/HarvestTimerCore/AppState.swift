@@ -278,6 +278,55 @@ public final class AppState {
         }
     }
 
+    /// Takes `hours` off one entry and puts them on another project and task,
+    /// on the same day. Merges into a matching entry when one already exists.
+    func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
+        guard let api else { return }
+        let source = currentVersion(of: entry)
+        guard projectId != source.project.id || taskId != source.task.id,
+              let plan = TimeMove.plan(sourceHours: source.hours, requested: hours)
+        else { return }
+
+        do {
+            let destination = (entriesByDay[source.spentDate] ?? []).first {
+                $0.project.id == projectId && $0.task.id == taskId
+            }
+            if let destination {
+                let updated = try await api.updateHours(
+                    entryId: destination.id,
+                    hours: destination.hours + plan.moved
+                )
+                logEdit(destination)
+                apply(updated)
+            } else {
+                let created = try await api.createEntry(
+                    projectId: projectId,
+                    taskId: taskId,
+                    spentDate: source.spentDate,
+                    hours: plan.moved,
+                    notes: source.notes
+                )
+                apply(created)
+            }
+
+            if plan.emptiesSource {
+                await deleteEntry(source)
+            } else {
+                await updateHours(source, hours: plan.remaining)
+            }
+            await sync()
+        } catch {
+            syncError = error.localizedDescription
+        }
+    }
+
+    private func logEdit(_ entry: TimeEntry) {
+        eventLog.append(
+            TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
+            day: entry.spentDate
+        )
+    }
+
     func deleteEntry(_ entry: TimeEntry) async {
         guard let api else { return }
         do {
