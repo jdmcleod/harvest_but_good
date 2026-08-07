@@ -27,6 +27,7 @@ So here's the app Harvest should have shipped.
 
 - **Menu bar first.** No Dock icon, no window clutter. Today's total hours sit right next to a tidy timer icon.
 - **Favorites at one click.** No dropdown safari.
+- **Search that finds things.** Type across project, client, and task names at once — `Billy Dev` turns up the Billy Graham project, and picking it lands you straight on the Development task.
 - **An actual day timeline.** A 7 AM–7 PM view with color-coded blocks for every start→stop interval, because "3.2 hours" tells you nothing about where your morning went. Harvest's own API doesn't expose these timestamps — this app logs them itself, locally.
 - **Inline notes and a full day view.** Edit entry notes in place, jump between days, and see how many times you bounced between tasks (no judgment).
 - **Syncs with Harvest every 30 seconds**, so the web and phone apps stay honest too.

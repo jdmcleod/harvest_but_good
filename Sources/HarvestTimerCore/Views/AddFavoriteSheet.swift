@@ -64,7 +64,7 @@ struct ProjectTaskPickerSheet: View {
 
     private var projectStep: some View {
         Group {
-            TextField("Search projects…", text: $search)
+            TextField("Search projects or tasks…", text: $search)
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .onSubmit {
@@ -73,13 +73,13 @@ struct ProjectTaskPickerSheet: View {
                 .onAppear { searchFocused = true }
 
             listContainer {
-                ForEach(filteredAssignments, id: \.id) { assignment in
+                ForEach(filteredAssignments, id: \.assignment.id) { match in
                     PickerRow(
-                        title: assignment.project.name,
-                        subtitle: assignment.client.name,
+                        title: match.assignment.project.name,
+                        subtitle: match.subtitle,
                         isSelected: false
                     ) {
-                        select(assignment)
+                        select(match)
                     }
                 }
                 if filteredAssignments.isEmpty {
@@ -157,22 +157,20 @@ struct ProjectTaskPickerSheet: View {
         selectedTaskId = initialTaskId
     }
 
-    private func select(_ assignment: ProjectAssignment) {
-        selectedAssignmentId = assignment.id
-        selectedTaskId = assignment.taskAssignments.first {
+    private func select(_ match: ProjectSearch.Match) {
+        selectedAssignmentId = match.assignment.id
+        // One matching task means the search already said which one they want.
+        if match.matchedTasks.count == 1 {
+            selectedTaskId = match.matchedTasks[0].id
+            return
+        }
+        selectedTaskId = match.assignment.taskAssignments.first {
             $0.task.name.caseInsensitiveCompare("Development") == .orderedSame
         }?.task.id
     }
 
-    private var filteredAssignments: [ProjectAssignment] {
-        let sorted = state.projectAssignments.sorted {
-            ($0.client.name, $0.project.name) < ($1.client.name, $1.project.name)
-        }
-        let query = search.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return sorted }
-        return sorted.filter {
-            "\($0.client.name) \($0.project.name)".localizedCaseInsensitiveContains(query)
-        }
+    private var filteredAssignments: [ProjectSearch.Match] {
+        ProjectSearch.matches(in: state.projectAssignments, query: search)
     }
 
     private func confirm() {
