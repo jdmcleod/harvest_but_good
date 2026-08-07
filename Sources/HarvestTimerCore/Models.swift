@@ -87,10 +87,20 @@ public struct HarvestUser: Codable {
     public let id: Int64
     public let firstName: String
     public let lastName: String
+
+    public init(id: Int64, firstName: String, lastName: String) {
+        self.id = id
+        self.firstName = firstName
+        self.lastName = lastName
+    }
 }
 
 public struct HarvestCompany: Codable {
     public let name: String
+
+    public init(name: String) {
+        self.name = name
+    }
 }
 
 public struct Favorite: Codable, Identifiable, Equatable {
