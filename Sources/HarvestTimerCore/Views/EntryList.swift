@@ -156,6 +156,15 @@ private struct EntryCard: View {
                     .onChange(of: notesFocused) { _, focused in
                         if !focused { save() }
                     }
+                    .onChange(of: entry.notes) { _, incoming in
+                        if let adopted = NotesField.adopting(
+                            incoming: incoming,
+                            shown: notes,
+                            isEditing: notesFocused
+                        ) {
+                            notes = adopted
+                        }
+                    }
             }
 
             Button {
