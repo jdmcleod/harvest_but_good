@@ -132,12 +132,10 @@ public final class AppState {
     }
 
     public func sync() async {
-        guard let api else { return }
         var days = Set(weekDays.map(Day.init))
-        let currentWeek = weekCalendar.week(containing: .now)
-        days.formUnion(currentWeek.map(Day.init))
+        days.formUnion(weekCalendar.week(containing: .now).map(Day.init))
 
-        do {
+        await perform { api in
             let sortedDays = days.sorted()
             let userId: Int64
             if let currentUserId {
@@ -163,8 +161,6 @@ public final class AppState {
             }
             recordExternalTimerChange(from: previousRunning, to: runningEntry)
             syncError = nil
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -173,9 +169,8 @@ public final class AppState {
     }
 
     public func startTimer(projectId: Int64, taskId: Int64) async {
-        guard let api else { return }
         let today = Day(.now)
-        do {
+        await perform { api in
             recordStopForRunningEntry()
             let entry: TimeEntry
             if let existing = entries(forDay: .now).first(where: {
@@ -196,15 +191,12 @@ public final class AppState {
             apply(entry)
             await sync()
             apply(entry)
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
     public func toggle(_ entry: TimeEntry) async {
-        guard let api else { return }
         let current = currentVersion(of: entry)
-        do {
+        await perform { api in
             let updated: TimeEntry
             if current.isRunning {
                 updated = try await api.stop(entryId: current.id)
@@ -223,8 +215,6 @@ public final class AppState {
             apply(updated)
             await sync()
             apply(updated)
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -237,29 +227,23 @@ public final class AppState {
     }
 
     public func saveNotes(_ entry: TimeEntry, notes: String) async {
-        guard let api, notes != (entry.notes ?? "") else { return }
-        do {
+        guard notes != (entry.notes ?? "") else { return }
+        await perform { api in
             apply(try await api.updateNotes(entryId: entry.id, notes: notes))
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
     public func updateHours(_ entry: TimeEntry, hours: Double) async {
-        guard let api else { return }
-        do {
+        await perform { api in
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
             logEdit(updated)
             apply(updated)
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
     public func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
-        guard let api,
-              entry.project.id != projectId || entry.task.id != taskId else { return }
-        do {
+        guard entry.project.id != projectId || entry.task.id != taskId else { return }
+        await perform { api in
             let updated = try await api.updateProjectTask(
                 entryId: entry.id,
                 projectId: projectId,
@@ -267,8 +251,6 @@ public final class AppState {
             )
             logEdit(updated)
             apply(updated)
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -277,14 +259,13 @@ public final class AppState {
     /// A running timer keeps running: on the source if time is left on it,
     /// otherwise on the destination it just moved to.
     public func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
-        guard let api else { return }
         var source = currentVersion(of: entry)
         guard projectId != source.project.id || taskId != source.task.id,
               hours > 0, liveHours(for: source) > 0
         else { return }
         let wasRunning = source.isRunning
 
-        do {
+        await perform { api in
             if wasRunning {
                 // Stop first so the split works off a settled number rather
                 // than one still climbing.
@@ -327,8 +308,6 @@ public final class AppState {
                 )
             }
             await sync()
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -342,8 +321,7 @@ public final class AppState {
     }
 
     public func deleteEntry(_ entry: TimeEntry) async {
-        guard let api else { return }
-        do {
+        await perform { api in
             try await api.deleteEntry(entryId: entry.id)
             eventLog.append(
                 TimerEvent(entryId: entry.id, action: .delete, timestamp: .now, projectId: entry.project.id),
@@ -351,8 +329,6 @@ public final class AppState {
             )
             entriesByDay[entry.spentDate] = (entriesByDay[entry.spentDate] ?? [])
                 .filter { $0.id != entry.id }
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -365,17 +341,15 @@ public final class AppState {
     }
 
     public func removeAFKTime() async {
-        guard let api, let prompt = afkPrompt else { return }
+        guard let prompt = afkPrompt else { return }
         afkPrompt = nil
         guard let entry = entry(withId: prompt.entryId) else { return }
         let hours = max(0, liveHours(for: entry) - prompt.duration(now: .now) / 3600)
-        do {
+        await perform { api in
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
             logEdit(updated)
             apply(updated)
             await sync()
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -393,11 +367,9 @@ public final class AppState {
     }
 
     func loadProjectAssignments() async {
-        guard let api, projectAssignments.isEmpty else { return }
-        do {
+        guard projectAssignments.isEmpty else { return }
+        await perform { api in
             projectAssignments = try await api.projectAssignments()
-        } catch {
-            syncError = error.localizedDescription
         }
     }
 
@@ -431,6 +403,17 @@ public final class AppState {
         afkPrompt = nil
         syncTask?.cancel()
         tickTask?.cancel()
+    }
+
+    /// Runs `work` against Harvest, putting any failure in the error banner.
+    /// Does nothing when there are no credentials yet.
+    private func perform(_ work: (HarvestClient) async throws -> Void) async {
+        guard let api else { return }
+        do {
+            try await work(api)
+        } catch {
+            syncError = error.localizedDescription
+        }
     }
 
     private func currentVersion(of entry: TimeEntry) -> TimeEntry {
