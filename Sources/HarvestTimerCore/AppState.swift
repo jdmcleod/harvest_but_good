@@ -29,8 +29,10 @@ public final class AppState {
     private let favoritesStore: FavoritesStore
     /// Set by tests, which stand in their own client rather than reach Harvest.
     private let injectedClient: HarvestClient?
-    private var syncTask: Task<Void, Never>?
-    private var tickTask: Task<Void, Never>?
+    public static let syncInterval = Duration.seconds(30)
+    public static let afkInterval = Duration.seconds(10)
+    private let syncTicker = Ticker(every: AppState.syncInterval)
+    private let afkTicker = Ticker(every: AppState.afkInterval)
 
     var needsSetup: Bool { credentials == nil }
 
@@ -46,13 +48,11 @@ public final class AppState {
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.load()
         favorites = favoritesStore.load()
-        if credentials != nil {
-            startSyncLoop()
-        }
     }
 
     /// Builds a state that talks to `client` and keeps its files under
-    /// `storageDirectory`, leaving the Keychain and the sync loop alone.
+    /// `storageDirectory`, leaving the Keychain alone. Like the other init it
+    /// starts no loops, so a test drives `sync` and `afkTick` itself.
     public init(
         client: HarvestClient,
         storageDirectory: URL,
@@ -113,22 +113,23 @@ public final class AppState {
         TimelineBuilder.startCounts(from: eventLog.events(forDay: Day(day)))
     }
 
-    func startSyncLoop() {
-        syncTask?.cancel()
-        syncTask = Task {
-            while !Task.isCancelled {
-                await sync()
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
-        tickTask?.cancel()
-        tickTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
-                now = .now
-                checkAFK()
-            }
-        }
+    /// Starts the sync and AFK loops. Safe to call again; a second call
+    /// replaces the running loops rather than adding to them.
+    public func start() {
+        guard api != nil else { return }
+        syncTicker.start { [weak self] in await self?.sync() }
+        afkTicker.start { [weak self] in self?.afkTick() }
+    }
+
+    public func stop() {
+        syncTicker.stop()
+        afkTicker.stop()
+    }
+
+    /// One turn of the AFK loop: move the clock on, then look for idleness.
+    public func afkTick() {
+        now = .now
+        checkAFK()
     }
 
     public func sync() async {
@@ -391,7 +392,7 @@ public final class AppState {
         try Keychain.save(credentials)
         self.credentials = credentials
         currentUserId = nil
-        startSyncLoop()
+        start()
     }
 
     func removeCredentials() {
@@ -401,8 +402,7 @@ public final class AppState {
         entriesByDay = [:]
         projectAssignments = []
         afkPrompt = nil
-        syncTask?.cancel()
-        tickTask?.cancel()
+        stop()
     }
 
     /// Runs `work` against Harvest, putting any failure in the error banner.

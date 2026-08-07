@@ -358,6 +358,50 @@ private func runMoveTimeStateTests() async {
 }
 
 @MainActor
+func runAFKLoopTests() async {
+    await test("a turn of the AFK loop raises a prompt for the running entry") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100, running: true),
+            ])
+            var idle: TimeInterval = 0
+            var announced = 0
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { idle }
+            )
+            state.onAFKDetected = { announced += 1 }
+            await state.sync()
+
+            state.afkTick()
+            expect(state.afkPrompt == nil, "no prompt while the keyboard is busy")
+
+            idle = Double(state.afkToleranceMinutes) * 60 + 60
+            state.afkTick()
+            expect(state.afkPrompt?.entryId == 1, "the running entry should be the one queried")
+            expect(announced == 1, "the app should be told once, so it can show the window")
+
+            state.afkTick()
+            expect(announced == 1, "a prompt already up should not be announced again")
+
+            state.dismissAFKPrompt()
+            expect(state.afkPrompt == nil, "dismissing should clear it")
+        }
+    }
+
+    await test("a turn of the AFK loop moves the clock on") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.now = .distantPast
+            state.afkTick()
+            expect(state.now.timeIntervalSinceNow > -1, "the tick should bring `now` up to date")
+        }
+    }
+}
+
+@MainActor
 func runFavoritesTests() async {
     let favorite = Favorite(
         projectId: 10,
