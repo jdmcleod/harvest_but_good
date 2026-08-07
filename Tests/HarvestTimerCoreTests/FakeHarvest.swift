@@ -1,5 +1,7 @@
 import Foundation
-import HarvestTimerCore
+import Testing
+
+@testable import HarvestTimerCore
 
 /// A stand-in Harvest that keeps entries in memory and behaves the way the
 /// real service does: starting a timer stops whichever one was running.

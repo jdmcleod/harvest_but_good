@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("EntryBook")
 func runEntryBookTests() {
     let monday = day("2026-08-03")
     let tuesday = day("2026-08-04")

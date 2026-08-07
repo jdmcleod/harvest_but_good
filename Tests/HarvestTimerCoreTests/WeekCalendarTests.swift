@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("WeekCalendar")
 func runWeekCalendarTests() {
     let week = WeekCalendar()
     let calendar = Calendar.current

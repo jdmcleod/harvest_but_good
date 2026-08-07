@@ -1,5 +1,7 @@
 import Foundation
-import HarvestTimerCore
+import Testing
+
+@testable import HarvestTimerCore
 
 func event(_ action: TimerEvent.Action, entry: Int64, project: Int64 = 1, minutes: Double) -> TimerEvent {
     TimerEvent(
@@ -10,6 +12,7 @@ func event(_ action: TimerEvent.Action, entry: Int64, project: Int64 = 1, minute
     )
 }
 
+@Test("Building the timeline")
 func runTimelineTests() {
     test("pairs start and stop into a block") {
         let blocks = TimelineBuilder.blocks(

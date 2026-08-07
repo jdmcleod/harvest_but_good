@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("Decoding Harvest's JSON")
 func runDecodingTests() {
     test("time entry page decodes Harvest JSON") {
         let json = """

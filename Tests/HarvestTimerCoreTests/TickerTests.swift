@@ -1,5 +1,7 @@
 import Foundation
-import HarvestTimerCore
+import Testing
+
+@testable import HarvestTimerCore
 
 /// A wait that never ends, so a ticker parks after its round instead of
 /// spinning while the test looks at what it did.
@@ -23,6 +25,7 @@ private final class Clock: @unchecked Sendable {
     }
 }
 
+@Test("Ticker")
 @MainActor
 func runTickerTests() async {
     await test("a ticker runs its work straight away, before the first wait") {

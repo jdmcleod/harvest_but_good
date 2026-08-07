@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("AFK detection")
 func runAFKTests() {
     test("afk detector stays quiet below tolerance") {
         let prompt = AFKDetector.evaluate(

@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("The event log")
 func runEventLogTests() {
     test("event log round-trips edit and delete actions") {
         let directory = FileManager.default.temporaryDirectory
@@ -39,6 +42,7 @@ func runEventLogTests() {
     }
 }
 
+@Test("The event log file format")
 func runEventLogFormatTests() {
     func withLog(_ body: (EventLog, URL) throws -> Void) rethrows {
         let directory = FileManager.default.temporaryDirectory

@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("Formatting")
 func runFormattingTests() {
     test("parses durations in h:mm and decimal formats") {
         expect(parseHours("1:30") == 1.5, "1:30 should parse to 1.5")

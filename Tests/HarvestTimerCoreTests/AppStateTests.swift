@@ -1,5 +1,7 @@
 import Foundation
-import HarvestTimerCore
+import Testing
+
+@testable import HarvestTimerCore
 
 /// Builds a state wired to `fake`, synced once so it holds the fake's entries.
 @MainActor
@@ -14,6 +16,7 @@ private func syncedState(
     return state
 }
 
+@Test("AppState")
 @MainActor
 func runAppStateTests() async {
     let calendar = Calendar.current
@@ -357,6 +360,7 @@ private func runMoveTimeStateTests() async {
     }
 }
 
+@Test("The AFK loop")
 @MainActor
 func runAFKLoopTests() async {
     await test("a turn of the AFK loop raises a prompt for the running entry") {
@@ -401,6 +405,7 @@ func runAFKLoopTests() async {
     }
 }
 
+@Test("Favorites")
 @MainActor
 func runFavoritesTests() async {
     let favorite = Favorite(

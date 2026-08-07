@@ -1,4 +1,4 @@
-// swift-tools-version:5.10
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
@@ -7,17 +7,20 @@ let package = Package(
     targets: [
         .target(
             name: "HarvestTimerCore",
-            path: "Sources/HarvestTimerCore"
+            path: "Sources/HarvestTimerCore",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "HarvestTimer",
             dependencies: ["HarvestTimerCore"],
-            path: "Sources/HarvestTimer"
+            path: "Sources/HarvestTimer",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .executableTarget(
-            name: "HarvestTimerTestRunner",
+        .testTarget(
+            name: "HarvestTimerCoreTests",
             dependencies: ["HarvestTimerCore"],
-            path: "Sources/HarvestTimerTestRunner"
+            path: "Tests/HarvestTimerCoreTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
 )

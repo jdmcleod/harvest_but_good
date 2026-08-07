@@ -1,5 +1,7 @@
 import Foundation
-import HarvestTimerCore
+import Testing
+
+@testable import HarvestTimerCore
 
 func assignment(
     id: Int64,
@@ -44,6 +46,7 @@ func search(_ query: String) -> [ProjectSearch.Match] {
     ProjectSearch.matches(in: searchFixtures, query: query)
 }
 
+@Test("Project search")
 func runProjectSearchTests() {
     test("every term has to appear, in any order and any case") {
         expect(ProjectSearch.matches("Almanac Development", query: "dev alma"), "both terms hit")

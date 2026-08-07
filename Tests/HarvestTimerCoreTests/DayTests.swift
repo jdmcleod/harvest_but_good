@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("Day")
 func runDayTests() {
     test("a day names the date it falls on") {
         let noon = Calendar.current.date(

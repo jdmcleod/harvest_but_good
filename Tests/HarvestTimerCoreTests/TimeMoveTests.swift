@@ -1,6 +1,9 @@
 import Foundation
-import HarvestTimerCore
+import Testing
 
+@testable import HarvestTimerCore
+
+@Test("Moving time between entries")
 func runTimeMoveTests() {
     test("moving part of an entry leaves the rest") {
         let plan = TimeMove.plan(sourceHours: 2, requested: 0.5)
