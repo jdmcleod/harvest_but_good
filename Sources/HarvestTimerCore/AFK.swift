@@ -45,15 +45,3 @@ public func systemIdleSeconds() -> TimeInterval {
     let anyInput = CGEventType(rawValue: ~0)!
     return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
 }
-
-public func formattedDuration(_ seconds: TimeInterval) -> String {
-    let totalMinutes = Int(seconds / 60)
-    if totalMinutes < 1 { return "less than a minute" }
-    let hours = totalMinutes / 60
-    let minutes = totalMinutes % 60
-    switch (hours, minutes) {
-    case (0, _): return "\(minutes) min"
-    case (_, 0): return hours == 1 ? "1 hour" : "\(hours) hours"
-    default: return "\(hours) hr \(minutes) min"
-    }
-}
