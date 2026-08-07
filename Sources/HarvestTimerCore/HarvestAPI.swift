@@ -22,8 +22,16 @@ enum HarvestAPIError: LocalizedError {
 
 public struct HarvestAPI: HarvestClient {
     let credentials: Keychain.Credentials
+    /// The shared session in the app. Tests hand in one backed by a stub, so
+    /// they can check what goes out and choose what comes back.
+    let session: URLSession
 
-    private static let baseURL = URL(string: "https://api.harvestapp.com/v2")!
+    init(credentials: Keychain.Credentials, session: URLSession = .shared) {
+        self.credentials = credentials
+        self.session = session
+    }
+
+    static let baseURL = URL(string: "https://api.harvestapp.com/v2")!
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -209,7 +217,7 @@ public struct HarvestAPI: HarvestClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
             throw HarvestAPIError.network(error)
         }

@@ -3,10 +3,12 @@ import Testing
 
 @testable import HarvestTimerCore
 
-/// A wait that never ends, so a ticker parks after its round instead of
-/// spinning while the test looks at what it did.
+/// A wait that outlasts the test, so a ticker parks after its round instead of
+/// spinning while the test looks at what it did. A sleep rather than a bare
+/// continuation, because `stop` has to be able to cut it short: a continuation
+/// nobody resumes is a leak, and the test process traps on it.
 private func park() async {
-    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+    try? await Task.sleep(for: .seconds(3600))
 }
 
 /// Records what a ticker asked to wait for. The first `rounds` waits return at

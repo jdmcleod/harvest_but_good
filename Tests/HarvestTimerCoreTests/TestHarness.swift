@@ -17,21 +17,22 @@ func expect(
 }
 
 /// The case now running, so a failed expectation can say where it came from.
-/// Suites run one case at a time on the same task, so a plain global holds.
-nonisolated(unsafe) private var currentCase = "<no case>"
+/// Task-local rather than global: swift-testing runs suites side by side, and
+/// a shared variable would hand one suite's name to another's failure.
+@TaskLocal private var currentCase = "<no case>"
 
 /// One case within a suite. `#expect` carries on after a failure, so the rest
 /// of a suite still runs and reports.
 func test(_ name: String, _ body: () throws -> Void) {
-    currentCase = name
-    defer { currentCase = "<no case>" }
-    #expect(throws: Never.self, "\(name) threw") { try body() }
+    $currentCase.withValue(name) {
+        #expect(throws: Never.self, "\(name) threw") { try body() }
+    }
 }
 
 func test(_ name: String, _ body: () async throws -> Void) async {
-    currentCase = name
-    defer { currentCase = "<no case>" }
-    await #expect(throws: Never.self, "\(name) threw") { try await body() }
+    await $currentCase.withValue(name) {
+        await #expect(throws: Never.self, "\(name) threw") { try await body() }
+    }
 }
 
 /// Fixed clock every suite hangs its timestamps off.

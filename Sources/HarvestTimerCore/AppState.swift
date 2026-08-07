@@ -39,7 +39,7 @@ public final class AppState {
     var needsSetup: Bool { credentials == nil }
 
     var api: HarvestClient? {
-        injectedClient ?? credentials.map(HarvestAPI.init)
+        injectedClient ?? credentials.map { HarvestAPI(credentials: $0) }
     }
 
     public init(idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds) {
