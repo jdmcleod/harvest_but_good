@@ -11,6 +11,7 @@ struct ProjectTaskPickerSheet: View {
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
+    @FocusState private var searchFocused: Bool
 
     init(
         title: String,
@@ -65,6 +66,11 @@ struct ProjectTaskPickerSheet: View {
         Group {
             TextField("Search projects…", text: $search)
                 .textFieldStyle(.roundedBorder)
+                .focused($searchFocused)
+                .onSubmit {
+                    if let first = filteredAssignments.first { select(first) }
+                }
+                .onAppear { searchFocused = true }
 
             listContainer {
                 ForEach(filteredAssignments, id: \.id) { assignment in
@@ -202,32 +208,35 @@ private struct PickerRow: View {
     let select: () -> Void
 
     var body: some View {
-        Button(action: select) {
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.callout)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
-                    }
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
+        HStack {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.callout)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? Color.harvest : .clear)
-            )
-            .foregroundStyle(isSelected ? .white : .primary)
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.bold))
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.harvest : .clear)
+        )
+        .foregroundStyle(isSelected ? .white : .primary)
+        // A gesture, not a Button: while the search field is being edited AppKit
+        // spends the first click on a Button resigning the field editor.
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(subtitle.map { "\(title), \($0)" } ?? title)
     }
 }
