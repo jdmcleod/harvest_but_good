@@ -66,7 +66,7 @@ private struct FavoriteChip: View {
             if hovering {
                 Text("\(favorite.projectName) · \(favorite.taskName)")
                     .font(.caption)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
