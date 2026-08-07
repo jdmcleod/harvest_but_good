@@ -5,7 +5,7 @@ public enum ProjectSearch {
     public struct Match {
         public let assignment: ProjectAssignment
         /// Tasks that matched the search, empty when the project itself matched.
-        public let matchedTasks: [ProjectAssignment.TaskAssignment.Task]
+        public let matchedTasks: [NamedRef]
 
         /// Show why a project surfaced: its matching tasks, else the client.
         public var subtitle: String {

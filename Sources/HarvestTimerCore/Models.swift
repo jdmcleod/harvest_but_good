@@ -1,29 +1,26 @@
 import Foundation
 
+/// Harvest hands back projects, tasks, and clients in the same shape: an id
+/// and a name. One type covers all of them.
+public struct NamedRef: Codable, Identifiable, Equatable {
+    public let id: Int64
+    public let name: String
+
+    public init(id: Int64, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
 public struct TimeEntry: Codable, Identifiable, Equatable {
-    public struct Project: Codable, Equatable {
-        public let id: Int64
-        public let name: String
-    }
-
-    public struct Task: Codable, Equatable {
-        public let id: Int64
-        public let name: String
-    }
-
-    public struct Client: Codable, Equatable {
-        public let id: Int64
-        public let name: String
-    }
-
     public let id: Int64
     public let spentDate: String
     public var hours: Double
     public var notes: String?
     public var isRunning: Bool
-    public let project: Project
-    public let task: Task
-    public let client: Client
+    public let project: NamedRef
+    public let task: NamedRef
+    public let client: NamedRef
     public let timerStartedAt: Date?
 }
 
@@ -33,28 +30,13 @@ public struct TimeEntriesPage: Codable {
 }
 
 public struct ProjectAssignment: Codable, Identifiable {
-    public struct Project: Codable {
-        public let id: Int64
-        public let name: String
-    }
-
-    public struct Client: Codable {
-        public let id: Int64
-        public let name: String
-    }
-
     public struct TaskAssignment: Codable {
-        public struct Task: Codable {
-            public let id: Int64
-            public let name: String
-        }
-
-        public let task: Task
+        public let task: NamedRef
     }
 
     public let id: Int64
-    public let project: Project
-    public let client: Client
+    public let project: NamedRef
+    public let client: NamedRef
     public let taskAssignments: [TaskAssignment]
 }
 

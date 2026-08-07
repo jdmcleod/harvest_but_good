@@ -7,7 +7,7 @@ struct ProjectTaskPickerSheet: View {
     let actionLabel: String
     var initialProjectId: Int64?
     var initialTaskId: Int64?
-    let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
+    let onConfirm: (ProjectAssignment, NamedRef) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
