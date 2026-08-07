@@ -20,7 +20,7 @@ enum HarvestAPIError: LocalizedError {
     }
 }
 
-struct HarvestAPI {
+public struct HarvestAPI: HarvestClient {
     let credentials: Keychain.Credentials
 
     private static let baseURL = URL(string: "https://api.harvestapp.com/v2")!
@@ -42,15 +42,15 @@ struct HarvestAPI {
         return decoder
     }()
 
-    func currentUser() async throws -> HarvestUser {
+    public func currentUser() async throws -> HarvestUser {
         try await get("users/me")
     }
 
-    func company() async throws -> HarvestCompany {
+    public func company() async throws -> HarvestCompany {
         try await get("company")
     }
 
-    func timeEntries(from: String, to: String, userId: Int64) async throws -> [TimeEntry] {
+    public func timeEntries(from: String, to: String, userId: Int64) async throws -> [TimeEntry] {
         var entries: [TimeEntry] = []
         var page = 1
         while true {
@@ -71,7 +71,7 @@ struct HarvestAPI {
         return entries
     }
 
-    func projectAssignments() async throws -> [ProjectAssignment] {
+    public func projectAssignments() async throws -> [ProjectAssignment] {
         var assignments: [ProjectAssignment] = []
         var page = 1
         while true {
@@ -86,7 +86,7 @@ struct HarvestAPI {
         return assignments
     }
 
-    func startTimer(projectId: Int64, taskId: Int64, spentDate: String) async throws -> TimeEntry {
+    public func startTimer(projectId: Int64, taskId: Int64, spentDate: String) async throws -> TimeEntry {
         try await send("time_entries", method: "POST", body: [
             "project_id": projectId,
             "task_id": taskId,
@@ -94,7 +94,7 @@ struct HarvestAPI {
         ])
     }
 
-    func createEntry(
+    public func createEntry(
         projectId: Int64,
         taskId: Int64,
         spentDate: String,
@@ -111,30 +111,30 @@ struct HarvestAPI {
         return try await send("time_entries", method: "POST", body: body)
     }
 
-    func restart(entryId: Int64) async throws -> TimeEntry {
+    public func restart(entryId: Int64) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)/restart", method: "PATCH")
     }
 
-    func stop(entryId: Int64) async throws -> TimeEntry {
+    public func stop(entryId: Int64) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)/stop", method: "PATCH")
     }
 
-    func updateHours(entryId: Int64, hours: Double) async throws -> TimeEntry {
+    public func updateHours(entryId: Int64, hours: Double) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)", method: "PATCH", body: ["hours": hours])
     }
 
-    func updateProjectTask(entryId: Int64, projectId: Int64, taskId: Int64) async throws -> TimeEntry {
+    public func updateProjectTask(entryId: Int64, projectId: Int64, taskId: Int64) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)", method: "PATCH", body: [
             "project_id": projectId,
             "task_id": taskId,
         ])
     }
 
-    func updateNotes(entryId: Int64, notes: String) async throws -> TimeEntry {
+    public func updateNotes(entryId: Int64, notes: String) async throws -> TimeEntry {
         try await send("time_entries/\(entryId)", method: "PATCH", body: ["notes": notes])
     }
 
-    func deleteEntry(entryId: Int64) async throws {
+    public func deleteEntry(entryId: Int64) async throws {
         _ = try await rawRequest("time_entries/\(entryId)", method: "DELETE", query: [:], body: nil)
     }
 

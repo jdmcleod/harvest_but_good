@@ -5,18 +5,18 @@ import Observation
 @Observable
 public final class AppState {
     var credentials: Keychain.Credentials?
-    var selectedDay: Date = .now {
+    public var selectedDay: Date = .now {
         didSet { selectedEntryId = nil }
     }
-    var selectedEntryId: Int64?
-    var entriesByDay: [String: [TimeEntry]] = [:]
-    var favorites: [Favorite] = []
+    public var selectedEntryId: Int64?
+    public var entriesByDay: [String: [TimeEntry]] = [:]
+    public var favorites: [Favorite] = []
     var projectAssignments: [ProjectAssignment] = []
-    var now: Date = .now
-    var lastSyncAt: Date = .now
-    var syncError: String?
-    var afkPrompt: AFKPrompt?
-    var afkToleranceMinutes: Int {
+    public var now: Date = .now
+    public var lastSyncAt: Date = .now
+    public var syncError: String?
+    public var afkPrompt: AFKPrompt?
+    public var afkToleranceMinutes: Int {
         didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
     }
     public var onAFKDetected: (() -> Void)?
@@ -24,7 +24,10 @@ public final class AppState {
     private let idleSeconds: () -> TimeInterval
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
-    private let eventLog = EventLog(directory: EventLog.defaultDirectory)
+    private let storageDirectory: URL
+    private let eventLog: EventLog
+    /// Set by tests, which stand in their own client rather than reach Harvest.
+    private let injectedClient: HarvestClient?
     private var syncTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
 
@@ -35,17 +38,20 @@ public final class AppState {
     }()
 
     private var favoritesURL: URL {
-        EventLog.defaultDirectory.appendingPathComponent("favorites.json")
+        storageDirectory.appendingPathComponent("favorites.json")
     }
 
     var needsSetup: Bool { credentials == nil }
 
-    var api: HarvestAPI? {
-        credentials.map(HarvestAPI.init)
+    var api: HarvestClient? {
+        injectedClient ?? credentials.map(HarvestAPI.init)
     }
 
     public init(idleSeconds: @escaping () -> TimeInterval = systemIdleSeconds) {
         self.idleSeconds = idleSeconds
+        self.injectedClient = nil
+        self.storageDirectory = EventLog.defaultDirectory
+        self.eventLog = EventLog(directory: storageDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.load()
         loadFavorites()
@@ -54,11 +60,26 @@ public final class AppState {
         }
     }
 
-    func dayString(_ date: Date) -> String {
+    /// Builds a state that talks to `client` and keeps its files under
+    /// `storageDirectory`, leaving the Keychain and the sync loop alone.
+    public init(
+        client: HarvestClient,
+        storageDirectory: URL,
+        idleSeconds: @escaping () -> TimeInterval = { 0 }
+    ) {
+        self.idleSeconds = idleSeconds
+        self.injectedClient = client
+        self.storageDirectory = storageDirectory
+        self.eventLog = EventLog(directory: storageDirectory)
+        afkToleranceMinutes = 10
+        loadFavorites()
+    }
+
+    public func dayString(_ date: Date) -> String {
         Self.dayFormatter.string(from: date)
     }
 
-    var weekDays: [Date] {
+    public var weekDays: [Date] {
         let calendar = Calendar.current
         let weekday = calendar.component(.weekday, from: selectedDay)
         let daysFromMonday = (weekday + 5) % 7
@@ -68,12 +89,12 @@ public final class AppState {
         return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
     }
 
-    func entries(forDay day: Date) -> [TimeEntry] {
+    public func entries(forDay day: Date) -> [TimeEntry] {
         entries(onDate: dayString(day))
     }
 
     /// Entries for a "yyyy-MM-dd" date, the form entries carry themselves.
-    func entries(onDate date: String) -> [TimeEntry] {
+    public func entries(onDate date: String) -> [TimeEntry] {
         (entriesByDay[date] ?? []).sorted { $0.id < $1.id }
     }
 
@@ -81,12 +102,12 @@ public final class AppState {
         entriesByDay.values.flatMap { $0 }.first { $0.isRunning }
     }
 
-    func liveHours(for entry: TimeEntry) -> Double {
+    public func liveHours(for entry: TimeEntry) -> Double {
         guard entry.isRunning else { return entry.hours }
         return entry.hours + max(0, now.timeIntervalSince(lastSyncAt)) / 3600
     }
 
-    func total(forDay day: Date) -> Double {
+    public func total(forDay day: Date) -> Double {
         entries(forDay: day).reduce(0) { $0 + liveHours(for: $1) }
     }
 
@@ -97,7 +118,7 @@ public final class AppState {
         return formattedHours(total(forDay: .now))
     }
 
-    func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
+    public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
         let runningIds = Set(entries(forDay: day).filter(\.isRunning).map(\.id))
         return TimelineBuilder.blocks(
             from: eventLog.events(forDay: dayString(day)),
@@ -106,11 +127,11 @@ public final class AppState {
         )
     }
 
-    func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
+    public func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
         TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: dayString(day)))
     }
 
-    func startCounts(forDay day: Date) -> [Int64: Int] {
+    public func startCounts(forDay day: Date) -> [Int64: Int] {
         TimelineBuilder.startCounts(from: eventLog.events(forDay: dayString(day)))
     }
 
@@ -169,11 +190,11 @@ public final class AppState {
         }
     }
 
-    func startFavorite(_ favorite: Favorite) async {
+    public func startFavorite(_ favorite: Favorite) async {
         await startTimer(projectId: favorite.projectId, taskId: favorite.taskId)
     }
 
-    func startTimer(projectId: Int64, taskId: Int64) async {
+    public func startTimer(projectId: Int64, taskId: Int64) async {
         guard let api else { return }
         let today = dayString(.now)
         do {
@@ -202,7 +223,7 @@ public final class AppState {
         }
     }
 
-    func toggle(_ entry: TimeEntry) async {
+    public func toggle(_ entry: TimeEntry) async {
         guard let api else { return }
         let current = currentVersion(of: entry)
         do {
@@ -237,7 +258,7 @@ public final class AppState {
         }
     }
 
-    func saveNotes(_ entry: TimeEntry, notes: String) async {
+    public func saveNotes(_ entry: TimeEntry, notes: String) async {
         guard let api, notes != (entry.notes ?? "") else { return }
         do {
             let updated = try await api.updateNotes(entryId: entry.id, notes: notes)
@@ -248,7 +269,7 @@ public final class AppState {
         }
     }
 
-    func updateHours(_ entry: TimeEntry, hours: Double) async {
+    public func updateHours(_ entry: TimeEntry, hours: Double) async {
         guard let api else { return }
         do {
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
@@ -263,7 +284,7 @@ public final class AppState {
         }
     }
 
-    func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
+    public func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
         guard let api,
               entry.project.id != projectId || entry.task.id != taskId else { return }
         do {
@@ -287,7 +308,7 @@ public final class AppState {
     /// on the same day. Merges into a matching entry when one already exists.
     /// A running timer keeps running: on the source if time is left on it,
     /// otherwise on the destination it just moved to.
-    func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
+    public func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
         guard let api else { return }
         var source = currentVersion(of: entry)
         guard projectId != source.project.id || taskId != source.task.id,
@@ -350,7 +371,7 @@ public final class AppState {
         )
     }
 
-    func deleteEntry(_ entry: TimeEntry) async {
+    public func deleteEntry(_ entry: TimeEntry) async {
         guard let api else { return }
         do {
             try await api.deleteEntry(entryId: entry.id)
@@ -365,15 +386,15 @@ public final class AppState {
         }
     }
 
-    func entry(withId id: Int64) -> TimeEntry? {
+    public func entry(withId id: Int64) -> TimeEntry? {
         entriesByDay.values.flatMap { $0 }.first { $0.id == id }
     }
 
-    func dismissAFKPrompt() {
+    public func dismissAFKPrompt() {
         afkPrompt = nil
     }
 
-    func removeAFKTime() async {
+    public func removeAFKTime() async {
         guard let api, let prompt = afkPrompt else { return }
         afkPrompt = nil
         guard let entry = entry(withId: prompt.entryId) else { return }
@@ -413,13 +434,13 @@ public final class AppState {
         }
     }
 
-    func addFavorite(_ favorite: Favorite) {
+    public func addFavorite(_ favorite: Favorite) {
         guard !favorites.contains(favorite) else { return }
         favorites.append(favorite)
         saveFavorites()
     }
 
-    func removeFavorite(_ favorite: Favorite) {
+    public func removeFavorite(_ favorite: Favorite) {
         favorites.removeAll { $0.id == favorite.id }
         saveFavorites()
     }
