@@ -193,8 +193,7 @@ private struct EntryCard: View {
             Button("Move Time…", systemImage: "arrow.right.arrow.left") {
                 movingTime = true
             }
-            .disabled(entry.isRunning)
-            .help(entry.isRunning ? "Stop the timer to move its time" : "Move time to another task")
+            .help("Move time to another task")
             Button("Delete Entry…", systemImage: "trash", role: .destructive) {
                 confirmingDelete = true
             }

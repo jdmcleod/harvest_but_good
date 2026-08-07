@@ -69,7 +69,12 @@ public final class AppState {
     }
 
     func entries(forDay day: Date) -> [TimeEntry] {
-        (entriesByDay[dayString(day)] ?? []).sorted { $0.id < $1.id }
+        entries(onDate: dayString(day))
+    }
+
+    /// Entries for a "yyyy-MM-dd" date, the form entries carry themselves.
+    func entries(onDate date: String) -> [TimeEntry] {
+        (entriesByDay[date] ?? []).sorted { $0.id < $1.id }
     }
 
     public var runningEntry: TimeEntry? {
@@ -280,15 +285,26 @@ public final class AppState {
 
     /// Takes `hours` off one entry and puts them on another project and task,
     /// on the same day. Merges into a matching entry when one already exists.
+    /// A running timer keeps running: on the source if time is left on it,
+    /// otherwise on the destination it just moved to.
     func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
         guard let api else { return }
-        let source = currentVersion(of: entry)
+        var source = currentVersion(of: entry)
         guard projectId != source.project.id || taskId != source.task.id,
-              let plan = TimeMove.plan(sourceHours: source.hours, requested: hours)
+              hours > 0, liveHours(for: source) > 0
         else { return }
+        let wasRunning = source.isRunning
 
         do {
-            let destination = (entriesByDay[source.spentDate] ?? []).first {
+            if wasRunning {
+                // Stop first so the split works off a settled number rather
+                // than one still climbing.
+                recordStopForRunningEntry()
+                source = try await api.stop(entryId: source.id)
+                apply(source)
+            }
+            guard let plan = TimeMove.plan(sourceHours: source.hours, requested: hours) else { return }
+            let destination = entries(onDate: source.spentDate).first {
                 $0.project.id == projectId && $0.task.id == taskId
             }
             if let destination {
@@ -313,6 +329,13 @@ public final class AppState {
                 await deleteEntry(source)
             } else {
                 await updateHours(source, hours: plan.remaining)
+            }
+
+            if wasRunning {
+                await startTimer(
+                    projectId: plan.emptiesSource ? projectId : source.project.id,
+                    taskId: plan.emptiesSource ? taskId : source.task.id
+                )
             }
             await sync()
         } catch {

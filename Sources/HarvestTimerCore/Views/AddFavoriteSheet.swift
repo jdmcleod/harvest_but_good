@@ -1,37 +1,17 @@
 import SwiftUI
 
-struct ProjectTaskPickerSheet<Accessory: View>: View {
+struct ProjectTaskPickerSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     let title: String
     let actionLabel: String
-    let initialProjectId: Int64?
-    let initialTaskId: Int64?
-    let confirmEnabled: Bool
-    let accessory: () -> Accessory
+    var initialProjectId: Int64?
+    var initialTaskId: Int64?
     let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
     @FocusState private var searchFocused: Bool
-
-    init(
-        title: String,
-        actionLabel: String,
-        initialProjectId: Int64? = nil,
-        initialTaskId: Int64? = nil,
-        confirmEnabled: Bool = true,
-        @ViewBuilder accessory: @escaping () -> Accessory,
-        onConfirm: @escaping (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
-    ) {
-        self.title = title
-        self.actionLabel = actionLabel
-        self.initialProjectId = initialProjectId
-        self.initialTaskId = initialTaskId
-        self.confirmEnabled = confirmEnabled
-        self.accessory = accessory
-        self.onConfirm = onConfirm
-    }
 
     private var selectedAssignment: ProjectAssignment? {
         state.projectAssignments.first { $0.id == selectedAssignmentId }
@@ -52,14 +32,12 @@ struct ProjectTaskPickerSheet<Accessory: View>: View {
                 projectStep
             }
 
-            accessory()
-
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button(actionLabel) { confirm() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(selectedAssignment == nil || selectedTaskId == nil || !confirmEnabled)
+                    .disabled(selectedAssignment == nil || selectedTaskId == nil)
             }
         }
         .padding(20)
@@ -80,7 +58,7 @@ struct ProjectTaskPickerSheet<Accessory: View>: View {
                 }
                 .onAppear { searchFocused = true }
 
-            listContainer {
+            PickerListBox {
                 ForEach(filteredAssignments, id: \.assignment.id) { match in
                     PickerRow(
                         title: match.assignment.project.name,
@@ -119,7 +97,7 @@ struct ProjectTaskPickerSheet<Accessory: View>: View {
                 }
             }
 
-            listContainer {
+            PickerListBox {
                 ForEach(assignment.taskAssignments, id: \.task.id) { taskAssignment in
                     PickerRow(
                         title: taskAssignment.task.name,
@@ -136,24 +114,6 @@ struct ProjectTaskPickerSheet<Accessory: View>: View {
                 }
             }
         }
-    }
-
-    private func listContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
-                content()
-            }
-            .padding(4)
-        }
-        .frame(height: 220)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .textBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(.separator)
-        )
     }
 
     private func applyInitialSelection() {
@@ -191,73 +151,6 @@ struct ProjectTaskPickerSheet<Accessory: View>: View {
     }
 }
 
-extension ProjectTaskPickerSheet where Accessory == EmptyView {
-    init(
-        title: String,
-        actionLabel: String,
-        initialProjectId: Int64? = nil,
-        initialTaskId: Int64? = nil,
-        onConfirm: @escaping (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
-    ) {
-        self.init(
-            title: title,
-            actionLabel: actionLabel,
-            initialProjectId: initialProjectId,
-            initialTaskId: initialTaskId,
-            accessory: { EmptyView() },
-            onConfirm: onConfirm
-        )
-    }
-}
-
-/// Moves some of an entry's time onto another project and task.
-struct MoveTimeSheet: View {
-    @Environment(AppState.self) private var state
-    let entry: TimeEntry
-    @State private var amountText: String
-
-    init(entry: TimeEntry) {
-        self.entry = entry
-        _amountText = State(initialValue: formattedHours(entry.hours))
-    }
-
-    private var amount: Double? {
-        guard let hours = parseHours(amountText), hours > 0 else { return nil }
-        return hours
-    }
-
-    var body: some View {
-        ProjectTaskPickerSheet(
-            title: "Move Time",
-            actionLabel: "Move",
-            confirmEnabled: amount != nil,
-            accessory: {
-                HStack(spacing: 8) {
-                    Text("Move")
-                    TextField("0:00", text: $amountText)
-                        .textFieldStyle(.roundedBorder)
-                        .monospacedDigit()
-                        .frame(width: 70)
-                    Text("of \(formattedHours(entry.hours)) from \(entry.task.name)")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .font(.callout)
-            }
-        ) { assignment, task in
-            guard let amount else { return }
-            Task {
-                await state.moveTime(
-                    entry,
-                    hours: amount,
-                    projectId: assignment.project.id,
-                    taskId: task.id
-                )
-            }
-        }
-    }
-}
-
 struct AddFavoriteSheet: View {
     @Environment(AppState.self) private var state
 
@@ -274,9 +167,34 @@ struct AddFavoriteSheet: View {
     }
 }
 
-private struct PickerRow: View {
+/// The framed, scrolling box every picker list sits in.
+struct PickerListBox<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                content()
+            }
+            .padding(4)
+        }
+        .frame(height: 220)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator)
+        )
+    }
+}
+
+struct PickerRow: View {
     let title: String
     let subtitle: String?
+    /// Trailing text, such as the hours already on an entry.
+    var detail: String?
     let isSelected: Bool
     let select: () -> Void
 
@@ -292,6 +210,12 @@ private struct PickerRow: View {
                 }
             }
             Spacer()
+            if let detail {
+                Text(detail)
+                    .font(.callout)
+                    .monospacedDigit()
+                    .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+            }
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.caption.weight(.bold))
