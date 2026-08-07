@@ -59,7 +59,7 @@ public enum TimelineBuilder {
         for event in events.sorted(by: { $0.timestamp < $1.timestamp }) {
             switch event.action {
             case .start:
-                if let open = openStarts[event.entryId] {
+                for open in openStarts.values where open.entryId != event.entryId {
                     blocks.append(TimelineBlock(
                         entryId: open.entryId,
                         projectId: open.projectId,
@@ -67,7 +67,7 @@ public enum TimelineBuilder {
                         end: event.timestamp
                     ))
                 }
-                openStarts[event.entryId] = event
+                openStarts = [event.entryId: event]
             case .stop:
                 guard let open = openStarts.removeValue(forKey: event.entryId) else { continue }
                 blocks.append(TimelineBlock(
