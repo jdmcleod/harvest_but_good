@@ -43,6 +43,11 @@ public struct EventLog {
     }
 
     public func append(_ event: TimerEvent, day: Day) {
+        // The same event can arrive twice — a sync noticing a start the app
+        // has already recorded, say. Dropping exact duplicates costs a read of
+        // the day before each append, which is worth it: a doubled start shows
+        // up as a doubled block on the timeline and a wrong start count.
+        guard !events(forDay: day).contains(event) else { return }
         guard let line = try? Self.encoder.encode(event) else { return }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = fileURL(forDay: day)

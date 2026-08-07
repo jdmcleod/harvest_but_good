@@ -4,7 +4,7 @@ struct AddFavoriteSheet: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        ProjectTaskPickerSheet(title: "Add Favorite", actionLabel: "Add Favorite") { assignment, task in
+        ProjectTaskPickerSheet(title: "Add Favorite", actionLabel: "Add Favorite") { assignment, task, _ in
             state.addFavorite(Favorite(
                 projectId: assignment.project.id,
                 taskId: task.id,

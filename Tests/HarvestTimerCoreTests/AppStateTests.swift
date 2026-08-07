@@ -369,12 +369,11 @@ func runAFKLoopTests() async {
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100, running: true),
             ])
-            var idle: TimeInterval = 0
             var announced = 0
             let state = AppState(
                 client: fake,
                 storageDirectory: directory,
-                idleSeconds: { idle }
+                idleSeconds: { 0 }
             )
             state.onAFKDetected = { announced += 1 }
             await state.sync()
@@ -382,9 +381,17 @@ func runAFKLoopTests() async {
             state.afkTick()
             expect(state.afkPrompt == nil, "no prompt while the keyboard is busy")
 
-            idle = Double(state.afkToleranceMinutes) * 60 + 60
+            // The prompt comes on the way back: input seen now, with a gap
+            // since the input before it. Putting the last one in the past is
+            // the same thing as having walked away for that long.
+            let away = Double(state.afkToleranceMinutes) * 60 + 60
+            state.lastActivityAt = Date.now.addingTimeInterval(-away)
             state.afkTick()
             expect(state.afkPrompt?.entryId == 1, "the running entry should be the one queried")
+            expect(
+                state.afkPrompt.map { $0.duration >= away - 5 } == true,
+                "the prompt should cover the whole time away, got \(state.afkPrompt?.duration ?? -1)"
+            )
             expect(announced == 1, "the app should be told once, so it can show the window")
 
             state.afkTick()

@@ -55,9 +55,13 @@ struct EntryList: View {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
         .sheet(isPresented: $showingStartTimer) {
-            ProjectTaskPickerSheet(title: "Start Timer", actionLabel: "Start Timer") { assignment, task in
+            ProjectTaskPickerSheet(
+                title: "Start Timer",
+                actionLabel: "Start Timer",
+                showsNotes: true
+            ) { assignment, task, notes in
                 Task {
-                    await state.startTimer(projectId: assignment.project.id, taskId: task.id)
+                    await state.startTimer(projectId: assignment.project.id, taskId: task.id, notes: notes)
                 }
             }
         }
@@ -182,6 +186,8 @@ private struct EntryCard: View {
             if notesFocused { save() }
         }
         .padding(10)
+        // The gesture rides the background so the notes field keeps its own
+        // double-click, the one that selects a word.
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
@@ -189,6 +195,8 @@ private struct EntryCard: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(highlightColor.opacity(0.08))
             }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { editingProjectTask = true }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
@@ -213,7 +221,7 @@ private struct EntryCard: View {
                 actionLabel: "Save",
                 initialProjectId: entry.project.id,
                 initialTaskId: entry.task.id
-            ) { assignment, task in
+            ) { assignment, task, _ in
                 Task {
                     await state.updateProjectTask(entry, projectId: assignment.project.id, taskId: task.id)
                 }

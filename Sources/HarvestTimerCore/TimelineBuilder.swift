@@ -5,7 +5,7 @@ public enum TimelineBuilder {
     public static func blocks(
         from events: [TimerEvent],
         now: Date,
-        runningEntryIds: Set<Int64>
+        running: [RunningTimer]
     ) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var openStarts: [Int64: TimerEvent] = [:]
@@ -35,13 +35,16 @@ public enum TimelineBuilder {
             }
         }
 
-        for open in openStarts.values
-        where open.timestamp <= now && runningEntryIds.contains(open.entryId) {
-            let endOfDay = Calendar.current.startOfDay(for: open.timestamp).addingTimeInterval(86_400)
+        // A timer with no start in the log was started somewhere else, so
+        // fall back to when Harvest says it began.
+        for timer in running {
+            guard let start = openStarts[timer.entryId]?.timestamp ?? timer.startedAt,
+                  start <= now else { continue }
+            let endOfDay = Calendar.current.startOfDay(for: start).addingTimeInterval(86_400)
             blocks.append(TimelineBlock(
-                entryId: open.entryId,
-                projectId: open.projectId,
-                start: open.timestamp,
+                entryId: timer.entryId,
+                projectId: timer.projectId,
+                start: start,
                 end: min(now, endOfDay)
             ))
         }

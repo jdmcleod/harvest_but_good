@@ -1,5 +1,24 @@
 import SwiftUI
 
+extension View {
+    /// Search fields spell out their own colours: the stock bezel keeps a light
+    /// background in Dark Mode, which leaves white text on white.
+    func pickerSearchFieldStyle() -> some View {
+        textFieldStyle(.plain)
+            .foregroundStyle(Color(nsColor: .textColor))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .textBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(.separator)
+            )
+    }
+}
+
 /// The framed, scrolling box every picker list sits in.
 struct PickerListBox<Content: View>: View {
     @ViewBuilder let content: () -> Content

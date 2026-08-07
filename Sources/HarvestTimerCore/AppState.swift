@@ -24,6 +24,9 @@ public final class AppState {
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
+    /// The most recent input we have seen. Internal, not private, so a test
+    /// can put it in the past instead of waiting out a tolerance.
+    var lastActivityAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
     private let weekCalendar = WeekCalendar()
@@ -99,11 +102,13 @@ public final class AppState {
     }
 
     public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
-        let runningIds = Set(entries(forDay: day).filter(\.isRunning).map(\.id))
+        let running = entries(forDay: day).filter(\.isRunning).map {
+            RunningTimer(entryId: $0.id, projectId: $0.project.id, startedAt: $0.timerStartedAt)
+        }
         return TimelineBuilder.blocks(
             from: eventLog.events(forDay: Day(day)),
             now: now,
-            runningEntryIds: runningIds
+            running: running
         )
     }
 
@@ -128,9 +133,17 @@ public final class AppState {
         afkTicker.stop()
     }
 
-    /// One turn of the AFK loop: move the clock on, then look for idleness.
+    /// One turn of the AFK loop: move the clock on, roll the view over if the
+    /// day changed under it, then look for idleness.
     public func afkTick() {
+        let previousNow = now
         now = .now
+        // Only follow the clock past midnight for someone still looking at
+        // what was today. Anyone browsing another day stays where they are.
+        if Calendar.current.isDate(selectedDay, inSameDayAs: previousNow),
+           !Calendar.current.isDate(now, inSameDayAs: previousNow) {
+            selectedDay = now
+        }
         checkAFK()
     }
 
@@ -168,20 +181,22 @@ public final class AppState {
         await startTimer(projectId: favorite.projectId, taskId: favorite.taskId)
     }
 
-    public func startTimer(projectId: Int64, taskId: Int64) async {
+    public func startTimer(projectId: Int64, taskId: Int64, notes: String? = nil) async {
         let today = Day(.now)
+        let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         await perform { api in
             recordStopForRunningEntry()
             let entry: TimeEntry
             if let existing = entries(forDay: .now).first(where: {
-                $0.project.id == projectId && $0.task.id == taskId
+                $0.project.id == projectId && $0.task.id == taskId && ($0.notes ?? "") == notes
             }) {
                 entry = try await api.restart(entryId: existing.id)
             } else {
                 entry = try await api.startTimer(
                     projectId: projectId,
                     taskId: taskId,
-                    spentDate: today
+                    spentDate: today,
+                    notes: notes
                 )
             }
             eventLog.append(
@@ -339,11 +354,19 @@ public final class AppState {
         afkPrompt = nil
     }
 
+    /// Takes the away time off the entry that was running and puts it on
+    /// another project and task instead.
+    public func moveAFKTime(projectId: Int64, taskId: Int64) async {
+        guard let prompt = afkPrompt, let entry = entry(withId: prompt.entryId) else { return }
+        afkPrompt = nil
+        await moveTime(entry, hours: prompt.duration / 3600, projectId: projectId, taskId: taskId)
+    }
+
     public func removeAFKTime() async {
         guard let prompt = afkPrompt else { return }
         afkPrompt = nil
         guard let entry = entry(withId: prompt.entryId) else { return }
-        let hours = max(0, liveHours(for: entry) - prompt.duration(now: .now) / 3600)
+        let hours = max(0, liveHours(for: entry) - prompt.duration / 3600)
         await perform { api in
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
             logEdit(updated)
@@ -353,13 +376,15 @@ public final class AppState {
     }
 
     private func checkAFK() {
+        let currentActivity = Date.now.addingTimeInterval(-idleSeconds())
         let updated = AFKDetector.evaluate(
             prompt: afkPrompt,
-            idleSeconds: idleSeconds(),
+            lastActivity: lastActivityAt,
+            currentActivity: currentActivity,
             toleranceSeconds: Double(afkToleranceMinutes) * 60,
-            runningEntryId: runningEntry?.id,
-            now: .now
+            runningEntryId: runningEntry?.id
         )
+        lastActivityAt = max(lastActivityAt, currentActivity)
         let isNew = updated != nil && afkPrompt == nil
         afkPrompt = updated
         if isNew { onAFKDetected?() }

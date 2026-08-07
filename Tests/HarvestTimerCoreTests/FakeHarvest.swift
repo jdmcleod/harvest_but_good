@@ -60,7 +60,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
         return searchFixtures
     }
 
-    func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry {
+    func startTimer(projectId: Int64, taskId: Int64, spentDate: Day, notes: String?) async throws -> TimeEntry {
         try record("startTimer(project: \(projectId), task: \(taskId))")
         stopEverything()
         nextId += 1
@@ -68,6 +68,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
             id: nextId,
             spentDate: spentDate,
             hours: 0,
+            notes: notes.flatMap { $0.isEmpty ? nil : $0 },
             isRunning: true,
             project: NamedRef(id: projectId, name: "Project \(projectId)"),
             task: NamedRef(id: taskId, name: "Task \(taskId)"),

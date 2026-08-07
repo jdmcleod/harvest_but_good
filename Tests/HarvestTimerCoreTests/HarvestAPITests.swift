@@ -168,7 +168,7 @@ func runHarvestAPITests() async {
 
     await test("starting a timer sends no hours, so Harvest runs it") {
         let server = StubHarvestServer(json: singleEntry)
-        _ = try await server.api().startTimer(projectId: 10, taskId: 100, spentDate: day)
+        _ = try await server.api().startTimer(projectId: 10, taskId: 100, spentDate: day, notes: nil)
 
         let sent = server.requests[0]
         expect(sent.method == "POST", "starting one creates it, was \(sent.method)")

@@ -142,6 +142,18 @@ public struct TimerEvent: Codable, Equatable {
     }
 }
 
+public struct RunningTimer: Equatable {
+    public let entryId: Int64
+    public let projectId: Int64
+    public let startedAt: Date?
+
+    public init(entryId: Int64, projectId: Int64, startedAt: Date?) {
+        self.entryId = entryId
+        self.projectId = projectId
+        self.startedAt = startedAt
+    }
+}
+
 public struct TimelineBlock: Identifiable, Equatable {
     public let entryId: Int64
     public let projectId: Int64

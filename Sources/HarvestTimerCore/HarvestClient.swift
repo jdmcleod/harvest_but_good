@@ -7,7 +7,7 @@ public protocol HarvestClient {
     func company() async throws -> HarvestCompany
     func timeEntries(from: Day, to: Day, userId: Int64) async throws -> [TimeEntry]
     func projectAssignments() async throws -> [ProjectAssignment]
-    func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry
+    func startTimer(projectId: Int64, taskId: Int64, spentDate: Day, notes: String?) async throws -> TimeEntry
     func createEntry(
         projectId: Int64,
         taskId: Int64,

@@ -8,10 +8,10 @@ func runAFKTests() {
     test("afk detector stays quiet below tolerance") {
         let prompt = AFKDetector.evaluate(
             prompt: nil,
-            idleSeconds: 299,
+            lastActivity: base,
+            currentActivity: base.addingTimeInterval(299),
             toleranceSeconds: 300,
-            runningEntryId: 1,
-            now: base
+            runningEntryId: 1
         )
         expect(prompt == nil, "should not prompt below tolerance")
     }
@@ -19,10 +19,10 @@ func runAFKTests() {
     test("afk detector needs a running timer") {
         let prompt = AFKDetector.evaluate(
             prompt: nil,
-            idleSeconds: 600,
+            lastActivity: base,
+            currentActivity: base.addingTimeInterval(600),
             toleranceSeconds: 300,
-            runningEntryId: nil,
-            now: base
+            runningEntryId: nil
         )
         expect(prompt == nil, "should not prompt without a running timer")
     }
@@ -30,76 +30,69 @@ func runAFKTests() {
     test("afk detector is disabled at zero tolerance") {
         let prompt = AFKDetector.evaluate(
             prompt: nil,
-            idleSeconds: 6000,
+            lastActivity: base,
+            currentActivity: base.addingTimeInterval(6000),
             toleranceSeconds: 0,
-            runningEntryId: 1,
-            now: base
+            runningEntryId: 1
         )
         expect(prompt == nil, "zero tolerance should disable detection")
     }
 
-    test("afk detector prompts when tolerance is crossed") {
+    test("afk detector prompts when input resumes after a gap") {
         let prompt = AFKDetector.evaluate(
             prompt: nil,
-            idleSeconds: 300,
+            lastActivity: base,
+            currentActivity: base.addingTimeInterval(300),
             toleranceSeconds: 300,
-            runningEntryId: 7,
-            now: base.addingTimeInterval(300)
+            runningEntryId: 7
         )
         expect(prompt?.entryId == 7, "prompt should carry the running entry id")
-        expect(prompt?.start == base, "prompt should start at the last activity")
-        expect(prompt?.returnedAt == nil, "prompt should not be returned yet")
+        expect(prompt?.start == base, "prompt should start at the last activity seen")
+        expect(prompt?.duration == 300, "duration should span the gap")
     }
 
-    test("afk prompt keeps growing while still idle") {
-        let existing = AFKPrompt(entryId: 7, start: base)
+    test("afk detector catches a gap the machine slept through") {
         let prompt = AFKDetector.evaluate(
-            prompt: existing,
-            idleSeconds: 900,
-            toleranceSeconds: 300,
-            runningEntryId: 7,
-            now: base.addingTimeInterval(900)
+            prompt: nil,
+            lastActivity: base,
+            currentActivity: base.addingTimeInterval(3 * 3600),
+            toleranceSeconds: 600,
+            runningEntryId: 7
         )
-        expect(prompt?.returnedAt == nil, "still idle should stay unreturned")
-        expect(prompt?.duration(now: base.addingTimeInterval(900)) == 900, "duration should track now")
+        expect(prompt?.duration == 3 * 3600, "a slept-through gap should be the full away time")
     }
 
-    test("afk prompt freezes at the moment of return") {
-        let existing = AFKPrompt(entryId: 7, start: base)
+    test("afk detector stays quiet while still idle") {
         let prompt = AFKDetector.evaluate(
-            prompt: existing,
-            idleSeconds: 5,
+            prompt: nil,
+            lastActivity: base,
+            currentActivity: base,
             toleranceSeconds: 300,
-            runningEntryId: 7,
-            now: base.addingTimeInterval(600)
+            runningEntryId: 7
         )
-        expect(prompt?.returnedAt == base.addingTimeInterval(595), "return should be last activity")
-        expect(
-            prompt?.duration(now: base.addingTimeInterval(9999)) == 595,
-            "frozen duration should ignore now"
-        )
+        expect(prompt == nil, "no new input means nobody is back yet")
     }
 
-    test("afk prompt does not unfreeze on later idleness") {
-        let existing = AFKPrompt(entryId: 7, start: base, returnedAt: base.addingTimeInterval(600))
+    test("afk prompt waits for an answer") {
+        let existing = AFKPrompt(entryId: 7, start: base, end: base.addingTimeInterval(900))
         let prompt = AFKDetector.evaluate(
             prompt: existing,
-            idleSeconds: 400,
+            lastActivity: base.addingTimeInterval(900),
+            currentActivity: base.addingTimeInterval(4500),
             toleranceSeconds: 300,
-            runningEntryId: 7,
-            now: base.addingTimeInterval(1200)
+            runningEntryId: 7
         )
-        expect(prompt == existing, "frozen prompt should not change")
+        expect(prompt == existing, "an open prompt should not change on its own")
     }
 
     test("afk prompt survives the timer stopping") {
-        let existing = AFKPrompt(entryId: 7, start: base)
+        let existing = AFKPrompt(entryId: 7, start: base, end: base.addingTimeInterval(600))
         let prompt = AFKDetector.evaluate(
             prompt: existing,
-            idleSeconds: 600,
+            lastActivity: base.addingTimeInterval(600),
+            currentActivity: base.addingTimeInterval(600),
             toleranceSeconds: 300,
-            runningEntryId: nil,
-            now: base.addingTimeInterval(600)
+            runningEntryId: nil
         )
         expect(prompt?.entryId == 7, "existing prompt should survive a stopped timer")
     }

@@ -102,12 +102,18 @@ public struct HarvestAPI: HarvestClient {
         return assignments
     }
 
-    public func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry {
+    public func startTimer(
+        projectId: Int64,
+        taskId: Int64,
+        spentDate: Day,
+        notes: String?
+    ) async throws -> TimeEntry {
         // No hours, so Harvest starts it running.
         try await send("time_entries", method: "POST", body: EntryFields(
             projectId: projectId,
             taskId: taskId,
-            spentDate: spentDate
+            spentDate: spentDate,
+            notes: notes.flatMap { $0.isEmpty ? nil : $0 }
         ))
     }
 

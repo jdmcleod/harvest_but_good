@@ -103,7 +103,7 @@ struct SetupView: View {
                                 .font(.headline)
                         }
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("If the computer sits untouched for this long while a timer runs, the app pops up so you can keep or remove the idle time.")
+                            Text("If the mouse and keyboard sit untouched for this long while a timer runs, the app asks when you come back whether to keep the time, remove it, or log it to another task.")
                                 .foregroundStyle(.secondary)
                             HStack(spacing: 8) {
                                 TextField(

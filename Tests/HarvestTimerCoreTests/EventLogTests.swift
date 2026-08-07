@@ -40,6 +40,24 @@ func runEventLogTests() {
         expect(events.first == start, "first event should round-trip")
         expect(log.events(forDay: day("2026-08-05")).isEmpty, "other days should be empty")
     }
+
+    test("appending an identical event is ignored") {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let log = EventLog(directory: directory)
+        let start = TimerEvent(entryId: 42, action: .start, timestamp: base, projectId: 7)
+        log.append(start, day: day("2026-08-06"))
+        log.append(start, day: day("2026-08-06"))
+        log.append(
+            TimerEvent(entryId: 42, action: .start, timestamp: base.addingTimeInterval(60), projectId: 7),
+            day: day("2026-08-06")
+        )
+
+        let events = log.events(forDay: day("2026-08-06"))
+        expect(events.count == 2, "duplicate should be dropped, got \(events.count) events")
+    }
 }
 
 @Test("The event log file format")
