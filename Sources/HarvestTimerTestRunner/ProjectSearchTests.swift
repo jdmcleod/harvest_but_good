@@ -52,6 +52,12 @@ func search(_ query: String) -> [ProjectSearch.Match] {
 }
 
 func runProjectSearchTests() {
+    test("every term has to appear, in any order and any case") {
+        expect(ProjectSearch.matches("Almanac Development", query: "dev alma"), "both terms hit")
+        expect(!ProjectSearch.matches("Almanac Development", query: "dev design"), "one term misses")
+        expect(ProjectSearch.matches("Almanac", query: "   "), "a blank query matches anything")
+    }
+
     test("empty search returns everything sorted by client then project") {
         let all = search("")
         expect(all.count == 3, "expected 3 matches, got \(all.count)")

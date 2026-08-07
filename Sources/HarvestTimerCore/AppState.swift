@@ -69,7 +69,12 @@ public final class AppState {
     }
 
     func entries(forDay day: Date) -> [TimeEntry] {
-        (entriesByDay[dayString(day)] ?? []).sorted { $0.id < $1.id }
+        entries(onDate: dayString(day))
+    }
+
+    /// Entries for a "yyyy-MM-dd" date, the form entries carry themselves.
+    func entries(onDate date: String) -> [TimeEntry] {
+        (entriesByDay[date] ?? []).sorted { $0.id < $1.id }
     }
 
     public var runningEntry: TimeEntry? {
@@ -276,6 +281,73 @@ public final class AppState {
         } catch {
             syncError = error.localizedDescription
         }
+    }
+
+    /// Takes `hours` off one entry and puts them on another project and task,
+    /// on the same day. Merges into a matching entry when one already exists.
+    /// A running timer keeps running: on the source if time is left on it,
+    /// otherwise on the destination it just moved to.
+    func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
+        guard let api else { return }
+        var source = currentVersion(of: entry)
+        guard projectId != source.project.id || taskId != source.task.id,
+              hours > 0, liveHours(for: source) > 0
+        else { return }
+        let wasRunning = source.isRunning
+
+        do {
+            if wasRunning {
+                // Stop first so the split works off a settled number rather
+                // than one still climbing.
+                recordStopForRunningEntry()
+                source = try await api.stop(entryId: source.id)
+                apply(source)
+            }
+            guard let plan = TimeMove.plan(sourceHours: source.hours, requested: hours) else { return }
+            let destination = entries(onDate: source.spentDate).first {
+                $0.project.id == projectId && $0.task.id == taskId
+            }
+            if let destination {
+                let updated = try await api.updateHours(
+                    entryId: destination.id,
+                    hours: destination.hours + plan.moved
+                )
+                logEdit(destination)
+                apply(updated)
+            } else {
+                let created = try await api.createEntry(
+                    projectId: projectId,
+                    taskId: taskId,
+                    spentDate: source.spentDate,
+                    hours: plan.moved,
+                    notes: source.notes
+                )
+                apply(created)
+            }
+
+            if plan.emptiesSource {
+                await deleteEntry(source)
+            } else {
+                await updateHours(source, hours: plan.remaining)
+            }
+
+            if wasRunning {
+                await startTimer(
+                    projectId: plan.emptiesSource ? projectId : source.project.id,
+                    taskId: plan.emptiesSource ? taskId : source.task.id
+                )
+            }
+            await sync()
+        } catch {
+            syncError = error.localizedDescription
+        }
+    }
+
+    private func logEdit(_ entry: TimeEntry) {
+        eventLog.append(
+            TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
+            day: entry.spentDate
+        )
     }
 
     func deleteEntry(_ entry: TimeEntry) async {

@@ -5,27 +5,13 @@ struct ProjectTaskPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
     let actionLabel: String
-    let initialProjectId: Int64?
-    let initialTaskId: Int64?
+    var initialProjectId: Int64?
+    var initialTaskId: Int64?
     let onConfirm: (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
     @FocusState private var searchFocused: Bool
-
-    init(
-        title: String,
-        actionLabel: String,
-        initialProjectId: Int64? = nil,
-        initialTaskId: Int64? = nil,
-        onConfirm: @escaping (ProjectAssignment, ProjectAssignment.TaskAssignment.Task) -> Void
-    ) {
-        self.title = title
-        self.actionLabel = actionLabel
-        self.initialProjectId = initialProjectId
-        self.initialTaskId = initialTaskId
-        self.onConfirm = onConfirm
-    }
 
     private var selectedAssignment: ProjectAssignment? {
         state.projectAssignments.first { $0.id == selectedAssignmentId }
@@ -72,7 +58,7 @@ struct ProjectTaskPickerSheet: View {
                 }
                 .onAppear { searchFocused = true }
 
-            listContainer {
+            PickerListBox {
                 ForEach(filteredAssignments, id: \.assignment.id) { match in
                     PickerRow(
                         title: match.assignment.project.name,
@@ -111,7 +97,7 @@ struct ProjectTaskPickerSheet: View {
                 }
             }
 
-            listContainer {
+            PickerListBox {
                 ForEach(assignment.taskAssignments, id: \.task.id) { taskAssignment in
                     PickerRow(
                         title: taskAssignment.task.name,
@@ -128,24 +114,6 @@ struct ProjectTaskPickerSheet: View {
                 }
             }
         }
-    }
-
-    private func listContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
-                content()
-            }
-            .padding(4)
-        }
-        .frame(height: 220)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .textBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(.separator)
-        )
     }
 
     private func applyInitialSelection() {
@@ -199,9 +167,34 @@ struct AddFavoriteSheet: View {
     }
 }
 
-private struct PickerRow: View {
+/// The framed, scrolling box every picker list sits in.
+struct PickerListBox<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                content()
+            }
+            .padding(4)
+        }
+        .frame(height: 220)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator)
+        )
+    }
+}
+
+struct PickerRow: View {
     let title: String
     let subtitle: String?
+    /// Trailing text, such as the hours already on an entry.
+    var detail: String?
     let isSelected: Bool
     let select: () -> Void
 
@@ -217,6 +210,12 @@ private struct PickerRow: View {
                 }
             }
             Spacer()
+            if let detail {
+                Text(detail)
+                    .font(.callout)
+                    .monospacedDigit()
+                    .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+            }
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.caption.weight(.bold))

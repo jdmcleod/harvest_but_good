@@ -15,6 +15,14 @@ public enum ProjectSearch {
         }
     }
 
+    /// True when every whitespace-separated term of the query appears in the text.
+    /// An empty query matches everything.
+    public static func matches(_ text: String, query: String) -> Bool {
+        query
+            .split(whereSeparator: \.isWhitespace)
+            .allSatisfy { text.localizedCaseInsensitiveContains($0) }
+    }
+
     /// Sorts by client then project, and keeps only what the search matches.
     /// Every whitespace-separated term must appear somewhere, so "Billy Dev"
     /// finds the Development task on the Billy Graham project.
@@ -25,12 +33,11 @@ public enum ProjectSearch {
         let sorted = assignments.sorted {
             ($0.client.name, $0.project.name) < ($1.client.name, $1.project.name)
         }
-        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !terms.isEmpty else {
+        guard !query.split(whereSeparator: \.isWhitespace).isEmpty else {
             return sorted.map { Match(assignment: $0, matchedTasks: []) }
         }
         func matchesAll(_ haystack: String) -> Bool {
-            terms.allSatisfy { haystack.localizedCaseInsensitiveContains($0) }
+            matches(haystack, query: query)
         }
         return sorted.compactMap { assignment in
             let projectText = "\(assignment.client.name) \(assignment.project.name)"

@@ -48,7 +48,9 @@ public func parseHours(_ text: String) -> Double? {
     let trimmed = text.trimmingCharacters(in: .whitespaces)
     let value: Double
     if let colon = trimmed.firstIndex(of: ":") {
-        guard let hours = Int(trimmed[..<colon]),
+        // ":20" is twenty minutes — a natural way to type less than an hour.
+        let hoursText = trimmed[..<colon]
+        guard let hours = hoursText.isEmpty ? 0 : Int(hoursText),
               let minutes = Int(trimmed[trimmed.index(after: colon)...]),
               hours >= 0, (0..<60).contains(minutes) else { return nil }
         value = Double(hours) + Double(minutes) / 60

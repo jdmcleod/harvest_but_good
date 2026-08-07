@@ -12,7 +12,9 @@ func runEventLogTests() {
         expect(parseHours("1:75") == nil, "minutes over 59 should not parse")
         expect(parseHours("-1") == nil, "negative should not parse")
         expect(parseHours("25") == nil, "over 24 hours should not parse")
-        expect(parseHours(":30") == nil, "missing hours should not parse")
+        expect(parseHours(":30") == 0.5, "leading colon means minutes only")
+        expect(parseHours(":90") == nil, "minutes over 59 still should not parse")
+        expect(parseHours(":") == nil, "a bare colon should not parse")
     }
 
     test("event log round-trips edit and delete actions") {
