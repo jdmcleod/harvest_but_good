@@ -410,6 +410,25 @@ public final class AppState {
         favoritesStore.save(favorites)
     }
 
+    /// Reorders the chips. Array order is the stored order, so there is nothing
+    /// to persist beyond the array itself.
+    public func moveFavorite(from: Int, to: Int) {
+        let reordered = FavoriteOrder.moving(favorites, from: from, to: to)
+        guard reordered != favorites else { return }
+        favorites = reordered
+        favoritesStore.save(favorites)
+    }
+
+    /// Replaces a favourite in place, keeping its position in the row. Matched
+    /// by id, so renaming the nickname of a project renamed in Harvest still
+    /// finds the right chip.
+    public func updateFavorite(_ favorite: Favorite) {
+        guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
+        guard favorites[index] != favorite else { return }
+        favorites[index] = favorite
+        favoritesStore.save(favorites)
+    }
+
     func saveCredentials(token: String, accountId: String) throws {
         let credentials = Keychain.Credentials(token: token, accountId: accountId)
         try Keychain.shared.save(credentials)

@@ -104,20 +104,61 @@ public struct HarvestCompany: Codable {
 }
 
 public struct Favorite: Codable, Identifiable, Equatable {
+    /// The most characters a chip can show. The pill is 14pt wide with its text
+    /// rotated, so this is a hard limit of the shape rather than a preference —
+    /// it is also the cap the nickname field enforces.
+    public static let maxLabelLength = 6
+
     public let projectId: Int64
     public let taskId: Int64
     public let clientName: String
     public let projectName: String
     public let taskName: String
+    /// What the chip should read, when the name derived from the project is a
+    /// poor guess. `nil` means fall back to that guess.
+    public var nickname: String?
+    /// An index into `Color.projectPalette`. `nil` means the colour the project
+    /// id would have given anyway.
+    public var colorIndex: Int?
 
     public var id: String { "\(projectId)-\(taskId)" }
 
-    public init(projectId: Int64, taskId: Int64, clientName: String, projectName: String, taskName: String) {
+    /// What the chip reads. A nickname wins outright; failing that, drop the
+    /// client prefix Harvest project names usually carry and take what fits.
+    public var chipLabel: String {
+        let name = nickname?.trimmingCharacters(in: .whitespaces)
+        if let name, !name.isEmpty {
+            return String(name.uppercased().prefix(Self.maxLabelLength))
+        }
+        return String(derivedName.uppercased().prefix(Self.maxLabelLength))
+    }
+
+    /// The project name with anything up to the first en dash, em dash, or
+    /// spaced hyphen removed: "Acme – Website" reads better as "Website".
+    private var derivedName: String {
+        if let separator = projectName.range(of: #"\s*[–—]\s*|\s+-\s+"#, options: .regularExpression) {
+            let stripped = projectName[separator.upperBound...].trimmingCharacters(in: .whitespaces)
+            if !stripped.isEmpty { return stripped }
+        }
+        return projectName
+    }
+
+    public init(
+        projectId: Int64,
+        taskId: Int64,
+        clientName: String,
+        projectName: String,
+        taskName: String,
+        nickname: String? = nil,
+        colorIndex: Int? = nil
+    ) {
         self.projectId = projectId
         self.taskId = taskId
         self.clientName = clientName
         self.projectName = projectName
         self.taskName = taskName
+        self.nickname = nickname
+        self.colorIndex = colorIndex
     }
 }
 
