@@ -5,7 +5,7 @@ struct AFKPromptView: View {
     let prompt: AFKPrompt
 
     private var currentPrompt: AFKPrompt { state.afkPrompt ?? prompt }
-    private var timeGone: String { formattedDuration(currentPrompt.duration(now: state.now)) }
+    private var timeGone: String { Hours.inWords(seconds: currentPrompt.duration(now: state.now)) }
     private var entry: TimeEntry? { state.entry(withId: prompt.entryId) }
 
     var body: some View {

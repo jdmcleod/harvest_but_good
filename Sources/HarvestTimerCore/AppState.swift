@@ -42,7 +42,7 @@ public final class AppState {
         injectedClient ?? credentials.map(HarvestAPI.init)
     }
 
-    public init(idleSeconds: @escaping () -> TimeInterval = systemIdleSeconds) {
+    public init(idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds) {
         self.idleSeconds = idleSeconds
         self.injectedClient = nil
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
@@ -93,9 +93,9 @@ public final class AppState {
 
     public var menuBarTitle: String {
         if let running = runningEntry {
-            return formattedHours(liveHours(for: running))
+            return Hours.formatted(liveHours(for: running))
         }
-        return formattedHours(total(forDay: .now))
+        return Hours.formatted(total(forDay: .now))
     }
 
     public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {

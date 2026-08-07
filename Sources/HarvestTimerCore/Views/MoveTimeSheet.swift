@@ -49,7 +49,7 @@ struct MoveTimeSheet: View {
         .padding(20)
         .frame(width: 460)
         .task { await state.loadProjectAssignments() }
-        .onAppear { amountText = formattedHours(sourceHours) }
+        .onAppear { amountText = Hours.formatted(sourceHours) }
     }
 
     private var amountField: some View {
@@ -61,7 +61,7 @@ struct MoveTimeSheet: View {
                 .frame(width: 70)
                 .focused($amountFocused)
                 .onAppear { amountFocused = true }
-            Text("of \(formattedHours(sourceHours)) from \(entry.project.name) · \(entry.task.name) to:")
+            Text("of \(Hours.formatted(sourceHours)) from \(entry.project.name) · \(entry.task.name) to:")
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
@@ -81,7 +81,7 @@ struct MoveTimeSheet: View {
                         PickerRow(
                             title: other.project.name,
                             subtitle: other.task.name,
-                            detail: formattedHours(other.hours),
+                            detail: Hours.formatted(other.hours),
                             isSelected: isSelected(projectId: other.project.id, taskId: other.task.id)
                         ) {
                             destinationProjectId = other.project.id
@@ -143,7 +143,7 @@ struct MoveTimeSheet: View {
     }
 
     private var amount: Double? {
-        guard let hours = parseHours(amountText), hours > 0 else { return nil }
+        guard let hours = Hours.parse(amountText), hours > 0 else { return nil }
         return hours
     }
 

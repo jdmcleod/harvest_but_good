@@ -41,7 +41,10 @@ public enum AFKDetector {
     }
 }
 
-public func systemIdleSeconds() -> TimeInterval {
-    let anyInput = CGEventType(rawValue: ~0)!
-    return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+public extension AFKDetector {
+    /// How long the keyboard and mouse have been quiet, asked of the system.
+    static func systemIdleSeconds() -> TimeInterval {
+        let anyInput = CGEventType(rawValue: ~0)!
+        return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+    }
 }

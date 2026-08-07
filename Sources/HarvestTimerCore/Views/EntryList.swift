@@ -88,7 +88,7 @@ private struct EntryCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(projectColor(entry.project.id))
+                        .fill(Color.forProject(entry.project.id))
                         .frame(width: 4)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.project.name)
@@ -121,7 +121,7 @@ private struct EntryCard: View {
                                     if !focused { commitHours() }
                                 }
                         } else {
-                            Text(formattedHours(state.liveHours(for: entry)))
+                            Text(Hours.formatted(state.liveHours(for: entry)))
                                 .font(.system(.title3, design: .rounded).weight(.semibold))
                                 .monospacedDigit()
                                 .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
@@ -221,7 +221,7 @@ private struct EntryCard: View {
                 Task { await state.deleteEntry(entry) }
             }
         } message: {
-            Text("\(entry.project.name) · \(formattedHours(state.liveHours(for: entry)))")
+            Text("\(entry.project.name) · \(Hours.formatted(state.liveHours(for: entry)))")
         }
     }
 
@@ -241,7 +241,7 @@ private struct EntryCard: View {
 
     private func beginHoursEdit() {
         guard !entry.isRunning else { return }
-        hoursText = formattedHours(entry.hours)
+        hoursText = Hours.formatted(entry.hours)
         editingHours = true
         DispatchQueue.main.async { hoursFocused = true }
     }
@@ -249,7 +249,7 @@ private struct EntryCard: View {
     private func commitHours() {
         guard editingHours else { return }
         editingHours = false
-        guard let hours = parseHours(hoursText),
+        guard let hours = Hours.parse(hoursText),
               abs(hours - entry.hours) > 0.0001 else { return }
         Task { await state.updateHours(entry, hours: hours) }
     }

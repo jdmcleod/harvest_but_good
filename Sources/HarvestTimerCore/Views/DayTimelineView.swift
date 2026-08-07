@@ -251,7 +251,7 @@ struct DayTimelineView: View {
         let isSelected = state.selectedEntryId == block.entryId
 
         RoundedRectangle(cornerRadius: 4)
-            .fill(projectColor(block.projectId).opacity(isSelected ? 0.9 : 0.65))
+            .fill(Color.forProject(block.projectId).opacity(isSelected ? 0.9 : 0.65))
             .overlay {
                 if isModified {
                     StripeTexture()
