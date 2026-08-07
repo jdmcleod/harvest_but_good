@@ -2,6 +2,7 @@ import Foundation
 
 runTimelineTests()
 runEventLogTests()
+runEventLogFormatTests()
 runFormattingTests()
 runDayTests()
 runWeekCalendarTests()
