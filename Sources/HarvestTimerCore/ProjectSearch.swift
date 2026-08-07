@@ -13,6 +13,18 @@ public enum ProjectSearch {
                 ? assignment.client.name
                 : matchedTasks.map(\.name).joined(separator: ", ")
         }
+
+        /// The task to pick without asking. One matching task means the search
+        /// already said which one they want; otherwise fall back to the task
+        /// most work is booked to.
+        public var defaultTaskId: Int64? {
+            if matchedTasks.count == 1 { return matchedTasks[0].id }
+            return assignment.taskAssignments.first {
+                $0.task.name.caseInsensitiveCompare(Self.fallbackTaskName) == .orderedSame
+            }?.task.id
+        }
+
+        static let fallbackTaskName = "Development"
     }
 
     /// True when every whitespace-separated term of the query appears in the text.

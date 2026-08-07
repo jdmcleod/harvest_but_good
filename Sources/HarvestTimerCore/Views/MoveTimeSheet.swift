@@ -23,7 +23,11 @@ struct MoveTimeSheet: View {
             amountField
 
             if let assignment = browsingAssignment {
-                taskStep(for: assignment)
+                TaskStepView(assignment: assignment, selectedTaskId: $destinationTaskId) {
+                    browsingAssignmentId = nil
+                    destinationProjectId = nil
+                    destinationTaskId = nil
+                }
             } else {
                 destinationStep
             }
@@ -94,51 +98,11 @@ struct MoveTimeSheet: View {
                     ) {
                         browsingAssignmentId = match.assignment.id
                         destinationProjectId = match.assignment.project.id
-                        destinationTaskId = defaultTaskId(for: match)
+                        destinationTaskId = match.defaultTaskId
                     }
                 }
                 if matchingProjects.isEmpty && dayEntries.isEmpty {
                     Text("Nothing matches “\(search)”")
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 12)
-                }
-            }
-        }
-    }
-
-    private func taskStep(for assignment: ProjectAssignment) -> some View {
-        Group {
-            HStack(spacing: 8) {
-                Button {
-                    browsingAssignmentId = nil
-                    destinationProjectId = nil
-                    destinationTaskId = nil
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.callout.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(assignment.project.name)
-                        .font(.callout.weight(.semibold))
-                    Text(assignment.client.name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            PickerListBox {
-                ForEach(assignment.taskAssignments, id: \.task.id) { taskAssignment in
-                    PickerRow(
-                        title: taskAssignment.task.name,
-                        subtitle: nil,
-                        isSelected: taskAssignment.task.id == destinationTaskId
-                    ) {
-                        destinationTaskId = taskAssignment.task.id
-                    }
-                }
-                if assignment.taskAssignments.isEmpty {
-                    Text("No tasks on this project")
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 12)
                 }
@@ -185,14 +149,6 @@ struct MoveTimeSheet: View {
 
     private func isSelected(projectId: Int64, taskId: Int64) -> Bool {
         destinationProjectId == projectId && destinationTaskId == taskId
-    }
-
-    private func defaultTaskId(for match: ProjectSearch.Match) -> Int64? {
-        // One matching task means the search already said which one they want.
-        if match.matchedTasks.count == 1 { return match.matchedTasks[0].id }
-        return match.assignment.taskAssignments.first {
-            $0.task.name.caseInsensitiveCompare("Development") == .orderedSame
-        }?.task.id
     }
 
     private func move() {

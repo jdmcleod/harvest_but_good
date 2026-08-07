@@ -129,6 +129,16 @@ func runProjectSearchTests() {
         expect(search("Nonexistent").isEmpty, "unmatched search should return nothing")
     }
 
+    test("the default task follows the search when it narrows to one") {
+        // "Billy Dev" hits only the Development task, so no need to ask.
+        expect(search("Billy Dev").first?.defaultTaskId == 100, "should pick the single matching task")
+        // A project match leaves every task open, so fall back to Development.
+        expect(search("Maintenance").first?.defaultTaskId == 100, "should fall back to Development")
+        expect(search("ABC Dev").first?.defaultTaskId == 300, "fallback should be case insensitive")
+        // Almanac has no Development task and the search matched the project.
+        expect(search("Almanac").first?.defaultTaskId == nil, "no obvious task means no default")
+    }
+
     test("subtitle explains why a project surfaced") {
         expect(search("Maintenance").first?.subtitle == "Billy Graham Evangelistic Association",
                "project match should show the client")

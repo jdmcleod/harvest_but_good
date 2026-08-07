@@ -27,7 +27,10 @@ struct ProjectTaskPickerSheet: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else if let assignment = selectedAssignment {
-                taskStep(for: assignment)
+                TaskStepView(assignment: assignment, selectedTaskId: $selectedTaskId) {
+                    selectedAssignmentId = nil
+                    selectedTaskId = nil
+                }
             } else {
                 projectStep
             }
@@ -77,45 +80,6 @@ struct ProjectTaskPickerSheet: View {
         }
     }
 
-    private func taskStep(for assignment: ProjectAssignment) -> some View {
-        Group {
-            HStack(spacing: 8) {
-                Button {
-                    selectedAssignmentId = nil
-                    selectedTaskId = nil
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.callout.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(assignment.project.name)
-                        .font(.callout.weight(.semibold))
-                    Text(assignment.client.name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            PickerListBox {
-                ForEach(assignment.taskAssignments, id: \.task.id) { taskAssignment in
-                    PickerRow(
-                        title: taskAssignment.task.name,
-                        subtitle: nil,
-                        isSelected: taskAssignment.task.id == selectedTaskId
-                    ) {
-                        selectedTaskId = taskAssignment.task.id
-                    }
-                }
-                if assignment.taskAssignments.isEmpty {
-                    Text("No tasks on this project")
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 12)
-                }
-            }
-        }
-    }
-
     private func applyInitialSelection() {
         guard selectedAssignmentId == nil,
               let initialProjectId,
@@ -127,14 +91,7 @@ struct ProjectTaskPickerSheet: View {
 
     private func select(_ match: ProjectSearch.Match) {
         selectedAssignmentId = match.assignment.id
-        // One matching task means the search already said which one they want.
-        if match.matchedTasks.count == 1 {
-            selectedTaskId = match.matchedTasks[0].id
-            return
-        }
-        selectedTaskId = match.assignment.taskAssignments.first {
-            $0.task.name.caseInsensitiveCompare("Development") == .orderedSame
-        }?.task.id
+        selectedTaskId = match.defaultTaskId
     }
 
     private var filteredAssignments: [ProjectSearch.Match] {
