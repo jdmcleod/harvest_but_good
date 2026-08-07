@@ -50,15 +50,15 @@ public struct HarvestAPI: HarvestClient {
         try await get("company")
     }
 
-    public func timeEntries(from: String, to: String, userId: Int64) async throws -> [TimeEntry] {
+    public func timeEntries(from: Day, to: Day, userId: Int64) async throws -> [TimeEntry] {
         var entries: [TimeEntry] = []
         var page = 1
         while true {
             let result: TimeEntriesPage = try await get(
                 "time_entries",
                 query: [
-                    "from": from,
-                    "to": to,
+                    "from": from.name,
+                    "to": to.name,
                     "user_id": String(userId),
                     "page": String(page),
                     "per_page": "100",
@@ -86,25 +86,25 @@ public struct HarvestAPI: HarvestClient {
         return assignments
     }
 
-    public func startTimer(projectId: Int64, taskId: Int64, spentDate: String) async throws -> TimeEntry {
+    public func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry {
         try await send("time_entries", method: "POST", body: [
             "project_id": projectId,
             "task_id": taskId,
-            "spent_date": spentDate,
+            "spent_date": spentDate.name,
         ])
     }
 
     public func createEntry(
         projectId: Int64,
         taskId: Int64,
-        spentDate: String,
+        spentDate: Day,
         hours: Double,
         notes: String?
     ) async throws -> TimeEntry {
         var body: [String: Any] = [
             "project_id": projectId,
             "task_id": taskId,
-            "spent_date": spentDate,
+            "spent_date": spentDate.name,
             "hours": hours,
         ]
         if let notes, !notes.isEmpty { body["notes"] = notes }

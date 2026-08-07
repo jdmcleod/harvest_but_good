@@ -25,7 +25,7 @@ public struct EventLog {
             .appendingPathComponent("HarvestTimer", isDirectory: true)
     }
 
-    public func events(forDay day: String) -> [TimerEvent] {
+    public func events(forDay day: Day) -> [TimerEvent] {
         guard let data = try? Data(contentsOf: fileURL(forDay: day)),
               let events = try? Self.decoder.decode([TimerEvent].self, from: data) else {
             return []
@@ -33,7 +33,7 @@ public struct EventLog {
         return events
     }
 
-    public func append(_ event: TimerEvent, day: String) {
+    public func append(_ event: TimerEvent, day: Day) {
         var all = events(forDay: day)
         all.append(event)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -42,7 +42,7 @@ public struct EventLog {
         }
     }
 
-    private func fileURL(forDay day: String) -> URL {
-        directory.appendingPathComponent("events-\(day).json")
+    private func fileURL(forDay day: Day) -> URL {
+        directory.appendingPathComponent("events-\(day.name).json")
     }
 }

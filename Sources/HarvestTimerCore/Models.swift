@@ -14,7 +14,7 @@ public struct NamedRef: Codable, Identifiable, Equatable {
 
 public struct TimeEntry: Codable, Identifiable, Equatable {
     public let id: Int64
-    public let spentDate: String
+    public let spentDate: Day
     public var hours: Double
     public var notes: String?
     public var isRunning: Bool
@@ -25,7 +25,7 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
 
     public init(
         id: Int64,
-        spentDate: String,
+        spentDate: Day,
         hours: Double,
         notes: String? = nil,
         isRunning: Bool = false,

@@ -5,13 +5,13 @@ import Foundation
 public protocol HarvestClient {
     func currentUser() async throws -> HarvestUser
     func company() async throws -> HarvestCompany
-    func timeEntries(from: String, to: String, userId: Int64) async throws -> [TimeEntry]
+    func timeEntries(from: Day, to: Day, userId: Int64) async throws -> [TimeEntry]
     func projectAssignments() async throws -> [ProjectAssignment]
-    func startTimer(projectId: Int64, taskId: Int64, spentDate: String) async throws -> TimeEntry
+    func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry
     func createEntry(
         projectId: Int64,
         taskId: Int64,
-        spentDate: String,
+        spentDate: Day,
         hours: Double,
         notes: String?
     ) async throws -> TimeEntry

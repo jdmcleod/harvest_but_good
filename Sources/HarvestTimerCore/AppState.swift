@@ -9,7 +9,7 @@ public final class AppState {
         didSet { selectedEntryId = nil }
     }
     public var selectedEntryId: Int64?
-    public var entriesByDay: [String: [TimeEntry]] = [:]
+    public var entriesByDay: [Day: [TimeEntry]] = [:]
     public var favorites: [Favorite] = []
     var projectAssignments: [ProjectAssignment] = []
     public var now: Date = .now
@@ -30,12 +30,6 @@ public final class AppState {
     private let injectedClient: HarvestClient?
     private var syncTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 
     private var favoritesURL: URL {
         storageDirectory.appendingPathComponent("favorites.json")
@@ -75,18 +69,13 @@ public final class AppState {
         loadFavorites()
     }
 
-    public func dayString(_ date: Date) -> String {
-        Self.dayFormatter.string(from: date)
-    }
-
     public var weekDays: [Date] { weekDaysContaining(selectedDay) }
 
     public func entries(forDay day: Date) -> [TimeEntry] {
-        entries(onDate: dayString(day))
+        entries(onDate: Day(day))
     }
 
-    /// Entries for a "yyyy-MM-dd" date, the form entries carry themselves.
-    public func entries(onDate date: String) -> [TimeEntry] {
+    public func entries(onDate date: Day) -> [TimeEntry] {
         (entriesByDay[date] ?? []).sorted { $0.id < $1.id }
     }
 
@@ -113,18 +102,18 @@ public final class AppState {
     public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
         let runningIds = Set(entries(forDay: day).filter(\.isRunning).map(\.id))
         return TimelineBuilder.blocks(
-            from: eventLog.events(forDay: dayString(day)),
+            from: eventLog.events(forDay: Day(day)),
             now: now,
             runningEntryIds: runningIds
         )
     }
 
     public func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
-        TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: dayString(day)))
+        TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: Day(day)))
     }
 
     public func startCounts(forDay day: Date) -> [Int64: Int] {
-        TimelineBuilder.startCounts(from: eventLog.events(forDay: dayString(day)))
+        TimelineBuilder.startCounts(from: eventLog.events(forDay: Day(day)))
     }
 
     func startSyncLoop() {
@@ -147,9 +136,9 @@ public final class AppState {
 
     public func sync() async {
         guard let api else { return }
-        var days = Set(weekDays.map(dayString))
+        var days = Set(weekDays.map(Day.init))
         let currentWeek = weekDaysContaining(.now)
-        days.formUnion(currentWeek.map(dayString))
+        days.formUnion(currentWeek.map(Day.init))
 
         do {
             let sortedDays = days.sorted()
@@ -168,7 +157,7 @@ public final class AppState {
             now = .now
             lastSyncAt = now
             let previousRunning = runningEntry
-            var grouped: [String: [TimeEntry]] = [:]
+            var grouped: [Day: [TimeEntry]] = [:]
             for entry in entries {
                 grouped[entry.spentDate, default: []].append(entry)
             }
@@ -188,7 +177,7 @@ public final class AppState {
 
     public func startTimer(projectId: Int64, taskId: Int64) async {
         guard let api else { return }
-        let today = dayString(.now)
+        let today = Day(.now)
         do {
             recordStopForRunningEntry()
             let entry: TimeEntry
@@ -224,14 +213,14 @@ public final class AppState {
                 updated = try await api.stop(entryId: current.id)
                 eventLog.append(
                     TimerEvent(entryId: current.id, action: .stop, timestamp: .now, projectId: current.project.id),
-                    day: dayString(.now)
+                    day: Day(.now)
                 )
             } else {
                 recordStopForRunningEntry()
                 updated = try await api.restart(entryId: current.id)
                 eventLog.append(
                     TimerEvent(entryId: current.id, action: .start, timestamp: .now, projectId: current.project.id),
-                    day: dayString(.now)
+                    day: Day(.now)
                 )
             }
             apply(updated)
@@ -495,7 +484,7 @@ public final class AppState {
         guard let running = runningEntry else { return }
         eventLog.append(
             TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id),
-            day: dayString(.now)
+            day: Day(.now)
         )
     }
 
@@ -509,13 +498,14 @@ public final class AppState {
         return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
     }
 
-    private func dayRange(from: String, to: String) -> [String] {
-        guard let start = Self.dayFormatter.date(from: from),
-              let end = Self.dayFormatter.date(from: to) else { return [] }
-        var days: [String] = []
+    /// Every day from `from` to `to`, so a day that came back with no entries
+    /// is emptied rather than left holding what it had before.
+    private func dayRange(from: Day, to: Day) -> [Day] {
+        guard let start = from.date, let end = to.date else { return [] }
+        var days: [Day] = []
         var current = start
         while current <= end {
-            days.append(dayString(current))
+            days.append(Day(current))
             current = Calendar.current.date(byAdding: .day, value: 1, to: current)!
         }
         return days

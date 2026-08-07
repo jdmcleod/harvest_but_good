@@ -1,4 +1,5 @@
 import Foundation
+import HarvestTimerCore
 
 var failures = 0
 var passes = 0
@@ -46,9 +47,7 @@ func test(_ name: String, _ body: () async throws -> Void) async {
 /// Fixed clock every suite hangs its timestamps off.
 let base = Date(timeIntervalSince1970: 1_754_470_800)
 
-/// A date in the "yyyy-MM-dd" form entries carry.
-func dayName(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: date)
+/// A day written out, for fixtures that want a fixed date.
+func day(_ name: String) -> Day {
+    Day(name: name)!
 }

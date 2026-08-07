@@ -20,7 +20,7 @@ func runAppStateTests() async {
 
     await test("liveHours adds the time since the last sync to a running entry") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100, running: true),
                 entry(id: 2, day: today, hours: 2, project: 11, task: 110),
@@ -39,7 +39,7 @@ func runAppStateTests() async {
 
     await test("the menu bar falls back to the day total with nothing running") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1.25, project: 10, task: 100),
             ])
@@ -53,7 +53,7 @@ func runAppStateTests() async {
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             // 6 August 2025 is a Wednesday.
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
-            let days = state.weekDays.map(state.dayString)
+            let days = state.weekDays.map { Day($0).name }
             expect(
                 days == ["2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08"],
                 "expected Monday through Friday, got \(days)"
@@ -61,9 +61,9 @@ func runAppStateTests() async {
 
             // A Monday and a Friday should both land on the same week.
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
-            expect(state.weekDays.map(state.dayString) == days, "Monday should give the same week")
+            expect(state.weekDays.map { Day($0).name } == days, "Monday should give the same week")
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 8))!
-            expect(state.weekDays.map(state.dayString) == days, "Friday should give the same week")
+            expect(state.weekDays.map { Day($0).name } == days, "Friday should give the same week")
         }
     }
 
@@ -78,7 +78,7 @@ func runAppStateTests() async {
 
     await test("starting a timer reuses the day's entry for that project and task") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
             ])
@@ -101,7 +101,7 @@ func runAppStateTests() async {
 
     await test("start counts come from the app's own starts") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
             ])
@@ -117,7 +117,7 @@ func runAppStateTests() async {
 
     await test("editing an entry's duration marks it modified for the timeline") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
             ])
@@ -133,7 +133,7 @@ func runAppStateTests() async {
 
     await test("changing an entry's project keeps its hours") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1.5, project: 10, task: 100),
             ])
@@ -151,7 +151,7 @@ func runAppStateTests() async {
 
     await test("deleting an entry drops it locally and logs the deletion") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
                 entry(id: 2, day: today, hours: 2, project: 11, task: 110),
@@ -168,7 +168,7 @@ func runAppStateTests() async {
 
     await test("a failed call surfaces as a sync error and leaves the entry alone") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
             ])
@@ -193,7 +193,7 @@ func runAppStateTests() async {
 private func runMoveTimeStateTests() async {
     await test("moving part of an entry to a new project creates the destination") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100, notes: "Debugging"),
             ])
@@ -211,7 +211,7 @@ private func runMoveTimeStateTests() async {
 
     await test("moving onto an entry that already exists merges into it") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100),
                 entry(id: 2, day: today, hours: 1, project: 20, task: 200),
@@ -233,7 +233,7 @@ private func runMoveTimeStateTests() async {
 
     await test("moving the whole entry deletes the source") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100),
             ])
@@ -251,7 +251,7 @@ private func runMoveTimeStateTests() async {
 
     await test("asking to move more than the entry holds moves all of it") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 0.75, project: 10, task: 100),
             ])
@@ -269,7 +269,7 @@ private func runMoveTimeStateTests() async {
 
     await test("a running source is stopped before the split, and keeps running") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100, running: true),
             ])
@@ -291,7 +291,7 @@ private func runMoveTimeStateTests() async {
 
     await test("emptying a running source hands the timer to the destination") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100, running: true),
             ])
@@ -307,7 +307,7 @@ private func runMoveTimeStateTests() async {
 
     await test("a move to the entry's own project and task does nothing") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100),
             ])
@@ -323,7 +323,7 @@ private func runMoveTimeStateTests() async {
 
     await test("moving nothing does nothing") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100),
                 entry(id: 2, day: today, hours: 0, project: 11, task: 110),
@@ -342,7 +342,7 @@ private func runMoveTimeStateTests() async {
 
     await test("a move logs an edit so the timeline can stripe the entry") {
         try await withTemporaryDirectory { directory in
-            let today = dayName(.now)
+            let today = Day(.now)
             let fake = FakeHarvest(entries: [
                 entry(id: 1, day: today, hours: 2, project: 10, task: 100),
             ])

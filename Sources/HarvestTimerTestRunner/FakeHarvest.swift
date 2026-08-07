@@ -46,7 +46,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
         return HarvestCompany(name: "Test Co")
     }
 
-    func timeEntries(from: String, to: String, userId: Int64) async throws -> [TimeEntry] {
+    func timeEntries(from: Day, to: Day, userId: Int64) async throws -> [TimeEntry] {
         try record("timeEntries(\(from)…\(to))")
         return entries.values
             .filter { $0.spentDate >= from && $0.spentDate <= to }
@@ -58,7 +58,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
         return searchFixtures
     }
 
-    func startTimer(projectId: Int64, taskId: Int64, spentDate: String) async throws -> TimeEntry {
+    func startTimer(projectId: Int64, taskId: Int64, spentDate: Day) async throws -> TimeEntry {
         try record("startTimer(project: \(projectId), task: \(taskId))")
         stopEverything()
         nextId += 1
@@ -79,7 +79,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
     func createEntry(
         projectId: Int64,
         taskId: Int64,
-        spentDate: String,
+        spentDate: Day,
         hours: Double,
         notes: String?
     ) async throws -> TimeEntry {
@@ -169,7 +169,7 @@ func withTemporaryDirectory(_ body: (URL) async throws -> Void) async throws {
 
 func entry(
     id: Int64,
-    day: String,
+    day: Day,
     hours: Double,
     project: Int64,
     task: Int64,

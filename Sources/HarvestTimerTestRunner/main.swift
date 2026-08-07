@@ -3,6 +3,7 @@ import Foundation
 runTimelineTests()
 runEventLogTests()
 runFormattingTests()
+runDayTests()
 runDecodingTests()
 runAFKTests()
 runProjectSearchTests()
