@@ -22,10 +22,9 @@ func runDecodingTests() {
           "next_page": null
         }
         """
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
-        let page = try decoder.decode(TimeEntriesPage.self, from: Data(json.utf8))
+        // The decoder the app ships, not one built for the test: a second
+        // decoder here would only prove that the second decoder works.
+        let page = try HarvestAPI.decoder.decode(TimeEntriesPage.self, from: Data(json.utf8))
         expect(page.timeEntries.count == 1, "expected 1 entry")
         expect(page.timeEntries.first?.project.name == "Online Store", "project name mismatch")
         expect(page.timeEntries.first?.isRunning == true, "should be running")

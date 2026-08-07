@@ -39,7 +39,9 @@ public struct HarvestAPI: HarvestClient {
         return encoder
     }()
 
-    private static let decoder: JSONDecoder = {
+    /// The one decoder Harvest's replies go through. Not private, so tests
+    /// read JSON with the decoder the app ships rather than one of their own.
+    static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let formatter = ISO8601DateFormatter()
