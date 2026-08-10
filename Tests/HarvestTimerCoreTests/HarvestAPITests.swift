@@ -6,7 +6,7 @@ import Testing
 /// What Harvest hands back from a write: the entry on its own, not a page.
 private let singleEntry = """
 {"id": 1, "spent_date": "2026-08-03", "hours": 1.5, "notes": "wrote it down",
- "is_running": false, "timer_started_at": null,
+ "is_running": false, "billable": true, "timer_started_at": null,
  "project": {"id": 10, "name": "Project"},
  "task": {"id": 100, "name": "Development"},
  "client": {"id": 1000, "name": "Client"}}
@@ -17,7 +17,7 @@ private func entriesPage(ids: [Int64], nextPage: Int?) -> String {
     let entries = ids.map { id in
         """
         {"id": \(id), "spent_date": "2026-08-03", "hours": 1, "notes": null,
-         "is_running": false, "timer_started_at": null,
+         "is_running": false, "billable": false, "timer_started_at": null,
          "project": {"id": 10, "name": "Project"},
          "task": {"id": 100, "name": "Development"},
          "client": {"id": 1000, "name": "Client"}}
@@ -130,7 +130,7 @@ func runHarvestAPITests() async {
         let running = """
         {"time_entries": [{
           "id": 1, "spent_date": "2026-08-03", "hours": 0.25, "notes": null,
-          "is_running": true, "timer_started_at": "2026-08-03T14:30:00Z",
+          "is_running": true, "billable": true, "timer_started_at": "2026-08-03T14:30:00Z",
           "project": {"id": 10, "name": "Project"},
           "task": {"id": 100, "name": "Development"},
           "client": {"id": 1000, "name": "Client"}
@@ -150,7 +150,7 @@ func runHarvestAPITests() async {
         let bad = """
         {"time_entries": [{
           "id": 1, "spent_date": "2026-08-03", "hours": 0.25, "notes": null,
-          "is_running": true, "timer_started_at": "half past two",
+          "is_running": true, "billable": true, "timer_started_at": "half past two",
           "project": {"id": 10, "name": "Project"},
           "task": {"id": 100, "name": "Development"},
           "client": {"id": 1000, "name": "Client"}

@@ -3,6 +3,7 @@ import SwiftUI
 
 public extension Color {
     static let harvest = Color(red: 243 / 255, green: 108 / 255, blue: 0)
+    static let harvestGreen = Color(red: 62 / 255, green: 133 / 255, blue: 66 / 255)
 }
 
 public extension NSColor {

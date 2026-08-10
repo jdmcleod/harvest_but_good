@@ -9,7 +9,9 @@ struct EntryList: View {
         let counts = state.startCounts(forDay: state.selectedDay)
 
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
+                WeekTotalCard(title: "Week", hours: state.weekTotal)
+                WeekTotalCard(title: "Billable", hours: state.weekBillableTotal)
                 Spacer()
                 Button {
                     showingStartTimer = true
@@ -17,6 +19,8 @@ struct EntryList: View {
                     Label("Start Timer", systemImage: "play.circle")
                         .font(.callout)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.harvestGreen)
                 .controlSize(.small)
                 .pointingCursor()
                 .help("Start a timer for any project")
@@ -65,6 +69,33 @@ struct EntryList: View {
                 }
             }
         }
+    }
+}
+
+private struct WeekTotalCard: View {
+    let title: String
+    let hours: Double
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(Hours.formatted(hours))
+                .font(.system(.callout, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color.primary.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(.quaternary, lineWidth: 1)
+        )
+        .help("\(title) hours logged this week")
     }
 }
 

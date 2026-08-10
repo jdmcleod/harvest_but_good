@@ -18,6 +18,7 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
     public var hours: Double
     public var notes: String?
     public var isRunning: Bool
+    public let billable: Bool
     public let project: NamedRef
     public let task: NamedRef
     public let client: NamedRef
@@ -29,6 +30,7 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
         hours: Double,
         notes: String? = nil,
         isRunning: Bool = false,
+        billable: Bool = false,
         project: NamedRef,
         task: NamedRef,
         client: NamedRef,
@@ -39,6 +41,7 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
         self.hours = hours
         self.notes = notes
         self.isRunning = isRunning
+        self.billable = billable
         self.project = project
         self.task = task
         self.client = client

@@ -44,15 +44,6 @@ struct WeekHeader: View {
             .buttonStyle(.plain)
             .pointingCursor()
             .help("Settings")
-
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Image(systemName: "power")
-            }
-            .buttonStyle(.plain)
-            .pointingCursor()
-            .help("Quit Harvest Timer")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

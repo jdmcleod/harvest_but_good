@@ -14,6 +14,7 @@ func runDecodingTests() {
             "hours": 2.11,
             "notes": "Debugging",
             "is_running": true,
+            "billable": true,
             "timer_started_at": "2026-08-06T14:00:00Z",
             "project": {"id": 14308069, "name": "Online Store"},
             "task": {"id": 8083365, "name": "Programming"},
@@ -28,6 +29,7 @@ func runDecodingTests() {
         expect(page.timeEntries.count == 1, "expected 1 entry")
         expect(page.timeEntries.first?.project.name == "Online Store", "project name mismatch")
         expect(page.timeEntries.first?.isRunning == true, "should be running")
+        expect(page.timeEntries.first?.billable == true, "billable should decode")
         expect(page.timeEntries.first?.timerStartedAt != nil, "timer_started_at should decode")
         expect(page.nextPage == nil, "next_page should be nil")
     }

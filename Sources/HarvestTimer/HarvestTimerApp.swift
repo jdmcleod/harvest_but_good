@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static func main() {
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -47,11 +47,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
+        window.delegate = self
         hasRestoredFrame = window.setFrameUsingName("HarvestTimerMain")
         window.setFrameAutosaveName("HarvestTimerMain")
 
         state.onAFKDetected = { [weak self] in self?.showWindow() }
         showWindow()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        NSApp.terminate(nil)
     }
 
     private func toggleWindow() {
