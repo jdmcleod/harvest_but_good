@@ -425,6 +425,20 @@ public final class AppState {
         favoritesStore.save(favorites)
     }
 
+    public func moveFavorite(from: Int, to: Int) {
+        let reordered = FavoriteOrder.moving(favorites, from: from, to: to)
+        guard reordered != favorites else { return }
+        favorites = reordered
+        favoritesStore.save(favorites)
+    }
+
+    public func updateFavorite(_ favorite: Favorite) {
+        guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
+        guard favorites[index] != favorite else { return }
+        favorites[index] = favorite
+        favoritesStore.save(favorites)
+    }
+
     func saveCredentials(token: String, accountId: String) throws {
         let credentials = Keychain.Credentials(token: token, accountId: accountId)
         try Keychain.shared.save(credentials)

@@ -104,20 +104,50 @@ public struct HarvestCompany: Codable {
 }
 
 public struct Favorite: Codable, Identifiable, Equatable {
+    public static let maxLabelLength = 6
+
     public let projectId: Int64
     public let taskId: Int64
     public let clientName: String
     public let projectName: String
     public let taskName: String
+    public var nickname: String?
+    public var colorIndex: Int?
 
     public var id: String { "\(projectId)-\(taskId)" }
 
-    public init(projectId: Int64, taskId: Int64, clientName: String, projectName: String, taskName: String) {
+    public var chipLabel: String {
+        let name = nickname?.trimmingCharacters(in: .whitespaces)
+        if let name, !name.isEmpty {
+            return String(name.uppercased().prefix(Self.maxLabelLength))
+        }
+        return String(derivedName.uppercased().prefix(Self.maxLabelLength))
+    }
+
+    private var derivedName: String {
+        if let separator = projectName.range(of: #"\s*[–—]\s*|\s+-\s+"#, options: .regularExpression) {
+            let stripped = projectName[separator.upperBound...].trimmingCharacters(in: .whitespaces)
+            if !stripped.isEmpty { return stripped }
+        }
+        return projectName
+    }
+
+    public init(
+        projectId: Int64,
+        taskId: Int64,
+        clientName: String,
+        projectName: String,
+        taskName: String,
+        nickname: String? = nil,
+        colorIndex: Int? = nil
+    ) {
         self.projectId = projectId
         self.taskId = taskId
         self.clientName = clientName
         self.projectName = projectName
         self.taskName = taskName
+        self.nickname = nickname
+        self.colorIndex = colorIndex
     }
 }
 

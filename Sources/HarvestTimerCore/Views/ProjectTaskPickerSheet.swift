@@ -10,6 +10,7 @@ struct ProjectTaskPickerSheet: View {
     /// Starting a timer can say what the time is for; editing an entry cannot,
     /// because the card already has a notes box of its own.
     var showsNotes = false
+    var dismissesOnConfirm = true
     let onConfirm: (ProjectAssignment, NamedRef, String) -> Void
     @State private var search = ""
     @State private var selectedAssignmentId: Int64?
@@ -128,6 +129,6 @@ struct ProjectTaskPickerSheet: View {
               let task = assignment.taskAssignments.first(where: { $0.task.id == taskId })?.task
         else { return }
         onConfirm(assignment, task, notes)
-        dismiss()
+        if dismissesOnConfirm { dismiss() }
     }
 }

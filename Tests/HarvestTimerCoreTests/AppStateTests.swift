@@ -517,6 +517,87 @@ func runFavoritesTests() async {
         }
     }
 
+    await test("reordering favorites survives a restart") {
+        try await withTemporaryDirectory { directory in
+            let second = Favorite(
+                projectId: 11,
+                taskId: 110,
+                clientName: "Client",
+                projectName: "Project 11",
+                taskName: "Development"
+            )
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.addFavorite(favorite)
+            state.addFavorite(second)
+
+            state.moveFavorite(from: 0, to: 1)
+            expect(state.favorites == [second, favorite], "the chips should have swapped")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.favorites == [second, favorite], "the new order should be read back from disk")
+
+            reopened.moveFavorite(from: 0, to: 0)
+            expect(reopened.favorites == [second, favorite], "moving a chip onto itself should change nothing")
+
+            reopened.moveFavorite(from: 0, to: 5)
+            expect(reopened.favorites == [second, favorite], "an index off the end should change nothing")
+        }
+    }
+
+    await test("a nickname and colour survive a restart, and keep their place") {
+        try await withTemporaryDirectory { directory in
+            let second = Favorite(
+                projectId: 11,
+                taskId: 110,
+                clientName: "Client",
+                projectName: "Project 11",
+                taskName: "Development"
+            )
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.addFavorite(favorite)
+            state.addFavorite(second)
+
+            var edited = favorite
+            edited.nickname = "Admin"
+            edited.colorIndex = 3
+            state.updateFavorite(edited)
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.favorites.count == 2, "editing should not add or drop a favorite")
+            expect(reopened.favorites.first?.nickname == "Admin", "the nickname should be read back from disk")
+            expect(reopened.favorites.first?.colorIndex == 3, "the colour should be read back from disk")
+            expect(reopened.favorites.last == second, "the edited chip should have kept its place")
+
+            let unknown = Favorite(
+                projectId: 99,
+                taskId: 990,
+                clientName: "Client",
+                projectName: "Project 99",
+                taskName: "Development",
+                nickname: "Nope"
+            )
+            reopened.updateFavorite(unknown)
+            expect(reopened.favorites.count == 2, "editing a favorite that is not there should do nothing")
+        }
+    }
+
+    await test("a favorites file written before nicknames existed still loads") {
+        try await withTemporaryDirectory { directory in
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let old = """
+            [{"projectId":10,"taskId":100,"clientName":"Client",\
+            "projectName":"Client – Project 10","taskName":"Development"}]
+            """
+            try Data(old.utf8).write(to: directory.appendingPathComponent("favorites.json"))
+
+            let loaded = FavoritesStore(directory: directory).load()
+            expect(loaded.count == 1, "the old shape should still decode, got \(loaded.count)")
+            expect(loaded.first?.nickname == nil, "a file without a nickname should read as no nickname")
+            expect(loaded.first?.colorIndex == nil, "a file without a colour should read as no colour")
+            expect(loaded.first?.chipLabel == "PROJEC", "it should fall back to the derived label")
+        }
+    }
+
     await test("starting a favorite starts its project and task") {
         try await withTemporaryDirectory { directory in
             let fake = FakeHarvest()
