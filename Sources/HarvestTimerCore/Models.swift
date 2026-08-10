@@ -195,3 +195,28 @@ public struct TimelineBlock: Identifiable, Equatable {
 
     public var id: String { "\(entryId)-\(start.timeIntervalSince1970)" }
 }
+
+public struct TimelineBreak: Identifiable, Equatable {
+    public let start: Date
+    public let end: Date
+
+    public var id: String { "break-\(start.timeIntervalSince1970)" }
+
+    public init(start: Date, end: Date) {
+        self.start = start
+        self.end = end
+    }
+
+    public var label: String {
+        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 {
+            return "\(minutes) minute break"
+        }
+        if remainder == 0 {
+            return "\(hours) hour break"
+        }
+        return "\(hours) hour \(remainder) minute break"
+    }
+}

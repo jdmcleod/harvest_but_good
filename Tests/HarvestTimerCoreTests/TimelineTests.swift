@@ -233,6 +233,85 @@ func runTimelineTests() {
         expect(blocks.first?.end == base.addingTimeInterval(1800), "block end mismatch")
     }
 
+    test("break appears in the gap between blocks") {
+        let blocks = TimelineBuilder.blocks(
+            from: [
+                event(.start, entry: 1, minutes: 0),
+                event(.stop, entry: 1, minutes: 30),
+                event(.start, entry: 2, minutes: 60),
+                event(.stop, entry: 2, minutes: 90),
+            ],
+            now: base.addingTimeInterval(7200),
+            running: []
+        )
+        let breaks = TimelineBuilder.breaks(between: blocks)
+        expect(breaks.count == 1, "expected 1 break, got \(breaks.count)")
+        expect(breaks.first?.start == base.addingTimeInterval(1800), "break start mismatch")
+        expect(breaks.first?.end == base.addingTimeInterval(3600), "break end mismatch")
+    }
+
+    test("back to back blocks have no break") {
+        let blocks = TimelineBuilder.blocks(
+            from: [
+                event(.start, entry: 1, minutes: 0),
+                event(.start, entry: 2, minutes: 20),
+                event(.stop, entry: 2, minutes: 45),
+            ],
+            now: base.addingTimeInterval(7200),
+            running: []
+        )
+        expect(TimelineBuilder.breaks(between: blocks).isEmpty, "adjacent blocks should have no break")
+    }
+
+    test("gaps under a minute are not breaks") {
+        let blocks = TimelineBuilder.blocks(
+            from: [
+                event(.start, entry: 1, minutes: 0),
+                event(.stop, entry: 1, minutes: 30),
+                event(.start, entry: 2, minutes: 30.5),
+                event(.stop, entry: 2, minutes: 45),
+            ],
+            now: base.addingTimeInterval(7200),
+            running: []
+        )
+        expect(TimelineBuilder.breaks(between: blocks).isEmpty, "sub-minute gap should not be a break")
+    }
+
+    test("overlapping blocks do not create a break inside the overlap") {
+        let blocks = [
+            TimelineBlock(entryId: 1, projectId: 1, start: base, end: base.addingTimeInterval(3600)),
+            TimelineBlock(
+                entryId: 2,
+                projectId: 2,
+                start: base.addingTimeInterval(600),
+                end: base.addingTimeInterval(1200)
+            ),
+            TimelineBlock(
+                entryId: 3,
+                projectId: 3,
+                start: base.addingTimeInterval(5400),
+                end: base.addingTimeInterval(7200)
+            ),
+        ]
+        let breaks = TimelineBuilder.breaks(between: blocks)
+        expect(breaks.count == 1, "expected 1 break, got \(breaks.count)")
+        expect(breaks.first?.start == base.addingTimeInterval(3600), "break should start at the latest end")
+    }
+
+    test("no blocks means no breaks") {
+        expect(TimelineBuilder.breaks(between: []).isEmpty, "empty day should have no breaks")
+    }
+
+    test("break label formats minutes and hours") {
+        func breakLabel(minutes: Double) -> String {
+            TimelineBreak(start: base, end: base.addingTimeInterval(minutes * 60)).label
+        }
+        expect(breakLabel(minutes: 30) == "30 minute break", "got \(breakLabel(minutes: 30))")
+        expect(breakLabel(minutes: 60) == "1 hour break", "got \(breakLabel(minutes: 60))")
+        expect(breakLabel(minutes: 90) == "1 hour 30 minute break", "got \(breakLabel(minutes: 90))")
+        expect(breakLabel(minutes: 120) == "2 hour break", "got \(breakLabel(minutes: 120))")
+    }
+
     test("modified entry ids come from edit and delete events") {
         let ids = TimelineBuilder.modifiedEntryIds(from: [
             event(.start, entry: 1, minutes: 0),

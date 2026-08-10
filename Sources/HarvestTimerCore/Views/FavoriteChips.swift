@@ -155,7 +155,7 @@ private struct FavoriteChip: View {
             if hovering, !tooltipsSuppressed {
                 Text("\(favorite.projectName) · \(favorite.taskName)")
                     .font(.caption)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color(nsColor: .labelColor))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
