@@ -52,6 +52,21 @@ public enum TimelineBuilder {
         return blocks.sorted { $0.start < $1.start }
     }
 
+    public static func breaks(between blocks: [TimelineBlock]) -> [TimelineBreak] {
+        let sorted = blocks.sorted { $0.start < $1.start }
+        var breaks: [TimelineBreak] = []
+        var latestEnd: Date?
+
+        for block in sorted {
+            if let end = latestEnd, block.start.timeIntervalSince(end) >= 60 {
+                breaks.append(TimelineBreak(start: end, end: block.start))
+            }
+            latestEnd = max(latestEnd ?? block.end, block.end)
+        }
+
+        return breaks
+    }
+
     public static func modifiedEntryIds(from events: [TimerEvent]) -> Set<Int64> {
         Set(events.filter { $0.action == .edit || $0.action == .delete }.map(\.entryId))
     }

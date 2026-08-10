@@ -50,6 +50,9 @@ struct DayTimelineView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         ZStack(alignment: .topLeading) {
                             gridlines(height: height, width: geometry.size.width)
+                            ForEach(TimelineBuilder.breaks(between: blocks)) { breakBlock in
+                                breakView(breakBlock, height: height, width: geometry.size.width)
+                            }
                             ForEach(blocks) { block in
                                 blockView(
                                     block,
@@ -286,6 +289,33 @@ struct DayTimelineView: View {
             .onTapGesture {
                 state.selectedEntryId = isSelected ? nil : block.entryId
             }
+    }
+
+    @ViewBuilder
+    private func breakView(_ breakBlock: TimelineBreak, height: CGFloat, width: CGFloat) -> some View {
+        let top = yPosition(for: breakBlock.start, height: height)
+        let bottom = yPosition(for: breakBlock.end, height: height)
+        let blockHeight = max(bottom - top, 3)
+        let blockWidth = width - labelWidth - 22
+
+        RoundedRectangle(cornerRadius: 4)
+            .fill(Color.secondary.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            )
+            .overlay {
+                if blockHeight >= 16 {
+                    Text(breakBlock.label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 5)
+                }
+            }
+            .frame(width: blockWidth, height: blockHeight)
+            .position(x: labelWidth + 12 + blockWidth / 2, y: top + blockHeight / 2)
+            .help(breakBlock.label)
     }
 
     @ViewBuilder
