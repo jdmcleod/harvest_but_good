@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showWindow() {
+        state.windowDidOpen()
         if !hasRestoredFrame {
             positionUnderStatusItem()
             hasRestoredFrame = true
