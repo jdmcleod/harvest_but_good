@@ -177,6 +177,7 @@ func entry(
     project: Int64,
     task: Int64,
     running: Bool = false,
+    billable: Bool = false,
     notes: String? = nil,
     startedAt: Date? = nil
 ) -> TimeEntry {
@@ -186,6 +187,7 @@ func entry(
         hours: hours,
         notes: notes,
         isRunning: running,
+        billable: billable,
         project: NamedRef(id: project, name: "Project \(project)"),
         task: NamedRef(id: task, name: "Task \(task)"),
         client: NamedRef(id: 1, name: "Client"),

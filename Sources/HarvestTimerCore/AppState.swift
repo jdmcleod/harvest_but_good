@@ -97,6 +97,18 @@ public final class AppState {
         entries(forDay: day).reduce(0) { $0 + liveHours(for: $1) }
     }
 
+    public var weekTotal: Double {
+        weekEntries.reduce(0) { $0 + liveHours(for: $1) }
+    }
+
+    public var weekBillableTotal: Double {
+        weekEntries.filter(\.billable).reduce(0) { $0 + liveHours(for: $1) }
+    }
+
+    private var weekEntries: [TimeEntry] {
+        weekDays.flatMap { entries(forDay: $0) }
+    }
+
     public var menuBarTitle: String {
         if let running = runningEntry {
             return Hours.formatted(liveHours(for: running))
