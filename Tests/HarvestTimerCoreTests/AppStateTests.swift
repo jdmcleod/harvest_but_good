@@ -426,6 +426,27 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("the first open of the day lands on today") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: .now)!
+
+            state.selectedDay = yesterday
+            state.windowDidOpen()
+            expect(
+                Calendar.current.isDate(state.selectedDay, inSameDayAs: yesterday),
+                "a second open the same day should leave the chosen day alone"
+            )
+
+            state.lastOpenedAt = yesterday
+            state.windowDidOpen()
+            expect(
+                Calendar.current.isDateInToday(state.selectedDay),
+                "the first open of a new day should jump to today"
+            )
+        }
+    }
+
     await test("a turn of the AFK loop moves the clock on") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)

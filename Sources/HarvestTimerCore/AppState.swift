@@ -27,6 +27,9 @@ public final class AppState {
     /// The most recent input we have seen. Internal, not private, so a test
     /// can put it in the past instead of waiting out a tolerance.
     var lastActivityAt: Date = .now
+    /// The day the window was last brought to the front. Internal so a test
+    /// can put it in the past instead of waiting for midnight.
+    var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
     private let weekCalendar = WeekCalendar()
@@ -145,6 +148,17 @@ public final class AppState {
             selectedDay = now
         }
         checkAFK()
+    }
+
+    /// Call when the window comes to the front. The first open of a calendar
+    /// day lands on today, wherever the app was left the day before; later
+    /// opens the same day leave the chosen day alone.
+    public func windowDidOpen() {
+        now = .now
+        if !Calendar.current.isDate(lastOpenedAt, inSameDayAs: now) {
+            selectedDay = now
+        }
+        lastOpenedAt = now
     }
 
     public func sync() async {
