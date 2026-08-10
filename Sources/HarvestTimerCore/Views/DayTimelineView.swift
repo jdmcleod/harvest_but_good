@@ -27,6 +27,7 @@ struct DayTimelineView: View {
 
     var body: some View {
         let blocks = state.timelineBlocks(forDay: state.selectedDay)
+        let breaks = TimelineBuilder.breaks(between: blocks)
         let projectNames = projectNamesById()
         let modifiedIds = state.modifiedEntryIds(forDay: state.selectedDay)
 
@@ -50,7 +51,7 @@ struct DayTimelineView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         ZStack(alignment: .topLeading) {
                             gridlines(height: height, width: geometry.size.width)
-                            ForEach(TimelineBuilder.breaks(between: blocks)) { breakBlock in
+                            ForEach(breaks) { breakBlock in
                                 breakView(breakBlock, height: height, width: geometry.size.width)
                             }
                             ForEach(blocks) { block in
@@ -98,8 +99,31 @@ struct DayTimelineView: View {
                     }
                 }
             }
+            if !breaks.isEmpty {
+                breakTotalBubble(breaks)
+            }
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func breakTotalBubble(_ breaks: [TimelineBreak]) -> some View {
+        let total = breaks.reduce(0) { $0 + $1.duration }
+        let day = Calendar.current.isDateInToday(state.selectedDay) ? "today" : "this day"
+        return Text("\(Hours.inWords(seconds: total)) of breaks \(day)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color.primary.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(.quaternary, lineWidth: 1)
+                    )
+            )
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 8)
     }
 
     private var zoomControls: some View {
