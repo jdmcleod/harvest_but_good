@@ -14,6 +14,7 @@ public final class AppState {
     public private(set) var book = EntryBook()
     public var favorites: [Favorite] = []
     var projectAssignments: [ProjectAssignment] = []
+    public private(set) var projectBudgets: [Int64: ProjectBudget] = [:]
     public var now: Date = .now
     public var lastSyncAt: Date = .now
     public var syncError: String?
@@ -32,6 +33,12 @@ public final class AppState {
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
+    private var companyBaseUri: String?
+    /// When budgets last came in. Internal, not private, so a test can put it
+    /// in the past instead of waiting out the refresh interval.
+    var lastBudgetFetchAt: Date?
+    private var budgetsUnavailable = false
+    static let budgetRefreshInterval: TimeInterval = 15 * 60
     private let weekCalendar = WeekCalendar()
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
@@ -186,6 +193,9 @@ public final class AppState {
                 userId = try await api.currentUser().id
                 currentUserId = userId
             }
+            if companyBaseUri == nil {
+                companyBaseUri = try await api.company().baseUri
+            }
             let entries = try await api.timeEntries(
                 from: sortedDays.first!,
                 to: sortedDays.last!,
@@ -201,6 +211,25 @@ public final class AppState {
             recordExternalTimerChange(from: previousRunning, to: runningEntry)
             syncError = nil
         }
+        await loadProjectBudgets()
+    }
+
+    /// Fetches the budget report, at most once per refresh interval. Harvest
+    /// only shows budgets to administrators and managers, so a 403 turns the
+    /// feature off quietly; other failures keep whatever was shown before.
+    func loadProjectBudgets() async {
+        guard let api, !budgetsUnavailable else { return }
+        if let lastBudgetFetchAt,
+           Date.now.timeIntervalSince(lastBudgetFetchAt) < Self.budgetRefreshInterval {
+            return
+        }
+        do {
+            let budgets = try await api.projectBudgets()
+            projectBudgets = Dictionary(budgets.map { ($0.projectId, $0) }) { _, last in last }
+            lastBudgetFetchAt = .now
+        } catch HarvestAPIError.forbidden {
+            budgetsUnavailable = true
+        } catch {}
     }
 
     public func startFavorite(_ favorite: Favorite) async {
@@ -417,6 +446,12 @@ public final class AppState {
         if isNew { onAFKDetected?() }
     }
 
+    /// The project's page on the Harvest site, once a sync has learned where
+    /// the account lives.
+    public func projectURL(for projectId: Int64) -> URL? {
+        companyBaseUri.flatMap { URL(string: "\($0)/projects/\(projectId)") }
+    }
+
     func loadProjectAssignments() async {
         guard projectAssignments.isEmpty else { return }
         await perform { api in
@@ -468,6 +503,10 @@ public final class AppState {
         try Keychain.shared.save(credentials)
         self.credentials = credentials
         currentUserId = nil
+        companyBaseUri = nil
+        projectBudgets = [:]
+        budgetsUnavailable = false
+        lastBudgetFetchAt = nil
         start()
     }
 
@@ -475,8 +514,12 @@ public final class AppState {
         Keychain.shared.clear()
         credentials = nil
         currentUserId = nil
+        companyBaseUri = nil
         book.removeAll()
         projectAssignments = []
+        projectBudgets = [:]
+        budgetsUnavailable = false
+        lastBudgetFetchAt = nil
         afkPrompt = nil
         stop()
     }

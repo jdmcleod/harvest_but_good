@@ -11,6 +11,10 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
     private(set) var calls: [String] = []
     var nextId: Int64 = 1000
     var failNextCall: Error?
+    var budgets: [ProjectBudget] = []
+    /// Unlike `failNextCall` this sticks, the way a role does: a token that
+    /// cannot see budgets cannot see them on the next try either.
+    var budgetsError: Error?
 
     init(entries: [TimeEntry] = []) {
         for entry in entries {
@@ -45,7 +49,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
 
     func company() async throws -> HarvestCompany {
         try record("company")
-        return HarvestCompany(name: "Test Co")
+        return HarvestCompany(name: "Test Co", baseUri: "https://testco.harvestapp.com")
     }
 
     func timeEntries(from: Day, to: Day, userId: Int64) async throws -> [TimeEntry] {
@@ -58,6 +62,12 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
     func projectAssignments() async throws -> [ProjectAssignment] {
         try record("projectAssignments")
         return searchFixtures
+    }
+
+    func projectBudgets() async throws -> [ProjectBudget] {
+        try record("projectBudgets")
+        if let budgetsError { throw budgetsError }
+        return budgets
     }
 
     func startTimer(projectId: Int64, taskId: Int64, spentDate: Day, notes: String?) async throws -> TimeEntry {

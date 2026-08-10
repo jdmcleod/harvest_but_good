@@ -102,6 +102,7 @@ private struct WeekTotalCard: View {
 
 private struct EntryCard: View {
     @Environment(AppState.self) private var state
+    @Environment(\.openURL) private var openURL
     let entry: TimeEntry
     let startCount: Int
     @State private var notes: String
@@ -127,15 +128,24 @@ private struct EntryCard: View {
                         .fill(Color.forProject(entry.project.id))
                         .frame(width: 4)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.project.name)
-                            .font(.callout.weight(.semibold))
-                        Text("\(entry.client.name) · \(entry.task.name)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.project.name)
+                                .font(.callout.weight(.semibold))
+                            Text("\(entry.client.name) · \(entry.task.name)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { editingProjectTask = true }
+                        .help("Double-click to change project or task")
+                        if let budget = state.projectBudgets[entry.project.id],
+                           let summary = budget.remainingSummary {
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .help(budget.remainingDescription ?? "")
+                        }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { editingProjectTask = true }
-                    .help("Double-click to change project or task")
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
                         if editingHours {
@@ -239,6 +249,11 @@ private struct EntryCard: View {
         )
         .contentShape(Rectangle())
         .contextMenu {
+            if let url = state.projectURL(for: entry.project.id) {
+                Button("Open Project in Harvest", systemImage: "safari") {
+                    openURL(url)
+                }
+            }
             Button("Move Time…", systemImage: "arrow.right.arrow.left") {
                 movingTime = true
             }

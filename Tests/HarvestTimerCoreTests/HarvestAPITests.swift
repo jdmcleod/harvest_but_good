@@ -65,12 +65,17 @@ func runHarvestAPITests() async {
         }
     }
 
-    await test("403 and 404 read as the wrong account") {
-        for status in [403, 404] {
-            let server = StubHarvestServer([.status(status)])
-            await expectFailure(from: server) { try await $0.currentUser() } check: { message in
-                expect(message.contains("Account ID doesn't match"), "\(status) should blame the account, said: \(message)")
-            }
+    await test("404 reads as the wrong account") {
+        let server = StubHarvestServer([.status(404)])
+        await expectFailure(from: server) { try await $0.currentUser() } check: { message in
+            expect(message.contains("Account ID doesn't match"), "404 should blame the account, said: \(message)")
+        }
+    }
+
+    await test("403 reads as missing permission, not a wrong account") {
+        let server = StubHarvestServer([.status(403)])
+        await expectFailure(from: server) { try await $0.projectBudgets() } check: { message in
+            expect(message.contains("isn't allowed"), "403 should blame permissions, said: \(message)")
         }
     }
 
@@ -124,6 +129,36 @@ func runHarvestAPITests() async {
         expect(server.callCount == 2, "should stop at the last page, made \(server.callCount) calls")
         expect(server.requests[0].path == "/v2/users/me/project_assignments", "wrong path")
         expect(assignments[0].taskAssignments.first?.task.name == "Development", "nested tasks should decode")
+    }
+
+    await test("the budget report pages the same way and reads both budget kinds") {
+        let firstPage = """
+        {"results": [
+          {"project_id": 10, "project_name": "Website", "client_id": 1000, "client_name": "Acme",
+           "budget_by": "project", "budget_is_monthly": false, "currency": "USD", "is_active": true,
+           "budget": 40.0, "budget_spent": 27.5, "budget_remaining": 12.5}
+        ], "next_page": 2, "page": 1, "total_pages": 2, "per_page": 2000}
+        """
+        let secondPage = """
+        {"results": [
+          {"project_id": 11, "project_name": "Retainer", "client_id": 1000, "client_name": "Acme",
+           "budget_by": "project_cost", "budget_is_monthly": false, "currency": "USD", "is_active": true,
+           "budget": 10000.0, "budget_spent": 5800.0, "budget_remaining": 4200.0},
+          {"project_id": 12, "project_name": "No Budget", "client_id": 1000, "client_name": "Acme",
+           "budget_by": "none", "budget_is_monthly": false, "currency": "USD", "is_active": true,
+           "budget": null, "budget_spent": null, "budget_remaining": null}
+        ], "next_page": null, "page": 2, "total_pages": 2, "per_page": 2000}
+        """
+        let server = StubHarvestServer([.json(firstPage), .json(secondPage)])
+        let budgets = try await server.api().projectBudgets()
+
+        expect(budgets.map(\.projectId) == [10, 11, 12], "every page should be kept, got \(budgets.map(\.projectId))")
+        expect(server.requests[0].path == "/v2/reports/project_budget", "wrong path")
+        expect(server.requests.map { $0.query["page"] } == ["1", "2"], "should follow next_page")
+        expect(budgets[0].budgetRemaining == 12.5, "hours budgets should decode")
+        expect(budgets[1].budgetIsMonetary, "a project_cost budget counts money")
+        expect(!budgets[0].budgetIsMonetary, "a project budget counts hours")
+        expect(budgets[2].budget == nil, "a project without a budget should decode as nil")
     }
 
     await test("the shipped decoder reads Harvest's timestamps") {

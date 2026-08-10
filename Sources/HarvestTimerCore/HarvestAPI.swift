@@ -2,6 +2,7 @@ import Foundation
 
 enum HarvestAPIError: LocalizedError {
     case unauthorized
+    case forbidden
     case accountMismatch
     case http(Int, String)
     case network(Error)
@@ -10,6 +11,8 @@ enum HarvestAPIError: LocalizedError {
         switch self {
         case .unauthorized:
             return "Token not accepted — re-copy it from id.getharvest.com/developers."
+        case .forbidden:
+            return "Harvest says this token's user isn't allowed to do that."
         case .accountMismatch:
             return "Account ID doesn't match this token. Use the numeric ID shown next to the token."
         case .http(let code, let body):
@@ -100,6 +103,21 @@ public struct HarvestAPI: HarvestClient {
             page = next
         }
         return assignments
+    }
+
+    public func projectBudgets() async throws -> [ProjectBudget] {
+        var budgets: [ProjectBudget] = []
+        var page = 1
+        while true {
+            let result: ProjectBudgetsPage = try await get(
+                "reports/project_budget",
+                query: ["page": String(page), "per_page": "2000"]
+            )
+            budgets.append(contentsOf: result.results)
+            guard let next = result.nextPage else { break }
+            page = next
+        }
+        return budgets
     }
 
     public func startTimer(
@@ -236,7 +254,9 @@ public struct HarvestAPI: HarvestClient {
             return data
         case 401:
             throw HarvestAPIError.unauthorized
-        case 403, 404:
+        case 403:
+            throw HarvestAPIError.forbidden
+        case 404:
             throw HarvestAPIError.accountMismatch
         default:
             throw HarvestAPIError.http(status, String(data: data, encoding: .utf8) ?? "")

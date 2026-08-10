@@ -86,6 +86,88 @@ public struct ProjectAssignmentsPage: Codable {
     public let nextPage: Int?
 }
 
+/// One row of Harvest's project budget report: how much a project has to
+/// spend and how much of it is gone, in hours or in money.
+public struct ProjectBudget: Codable, Equatable {
+    public let projectId: Int64
+    /// How the project is budgeted: "project" or "task" count hours,
+    /// "project_cost" and "task_fees" count money.
+    public let budgetBy: String
+    public let budget: Double?
+    public let budgetSpent: Double?
+    public let budgetRemaining: Double?
+
+    public init(
+        projectId: Int64,
+        budgetBy: String,
+        budget: Double?,
+        budgetSpent: Double?,
+        budgetRemaining: Double?
+    ) {
+        self.projectId = projectId
+        self.budgetBy = budgetBy
+        self.budget = budget
+        self.budgetSpent = budgetSpent
+        self.budgetRemaining = budgetRemaining
+    }
+
+    public var budgetIsMonetary: Bool {
+        budgetBy.contains("cost") || budgetBy.contains("fees")
+    }
+
+    /// The card line: "Budget remaining: $4.2k (42%)", "Budget remaining:
+    /// 12.5h (31%)", or "Over budget by $500" once it is spent.
+    public var remainingSummary: String? {
+        guard let budget, budget > 0 else { return nil }
+        let remaining = budgetRemaining ?? (budget - (budgetSpent ?? 0))
+        if remaining < 0 {
+            return "Over budget by \(compact(-remaining))"
+        }
+        let percent = Int((remaining / budget * 100).rounded())
+        return "Budget remaining: \(compact(remaining)) (\(percent)%)"
+    }
+
+    private func compact(_ value: Double) -> String {
+        guard budgetIsMonetary else { return amount(value) }
+        if value >= 1000 {
+            let thousands = (value / 100).rounded() / 10
+            let text = thousands == thousands.rounded()
+                ? String(format: "%.0f", thousands)
+                : String(format: "%.1f", thousands)
+            return "$\(text)k"
+        }
+        return "$\(Int(value.rounded()))"
+    }
+
+    /// "12.5h left of 40h", "$4,200 left of $10,000", or the "over" versions
+    /// once the budget is spent.
+    public var remainingDescription: String? {
+        guard let budget, budget > 0 else { return nil }
+        let remaining = budgetRemaining ?? (budget - (budgetSpent ?? 0))
+        if remaining < 0 {
+            return "\(amount(-remaining)) over the \(amount(budget)) budget"
+        }
+        return "\(amount(remaining)) left of \(amount(budget))"
+    }
+
+    private func amount(_ value: Double) -> String {
+        if budgetIsMonetary {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = 0
+            formatter.locale = Locale(identifier: "en_US")
+            return "$" + (formatter.string(from: NSNumber(value: value)) ?? String(Int(value)))
+        }
+        let rounded = (value * 10).rounded() / 10
+        return String(format: rounded == rounded.rounded() ? "%.0fh" : "%.1fh", rounded)
+    }
+}
+
+public struct ProjectBudgetsPage: Codable {
+    public let results: [ProjectBudget]
+    public let nextPage: Int?
+}
+
 public struct HarvestUser: Codable {
     public let id: Int64
     public let firstName: String
@@ -100,9 +182,12 @@ public struct HarvestUser: Codable {
 
 public struct HarvestCompany: Codable {
     public let name: String
+    /// Where this account lives on the web, e.g. "https://acme.harvestapp.com".
+    public let baseUri: String
 
-    public init(name: String) {
+    public init(name: String, baseUri: String) {
         self.name = name
+        self.baseUri = baseUri
     }
 }
 
@@ -207,8 +292,12 @@ public struct TimelineBreak: Identifiable, Equatable {
         self.end = end
     }
 
+    public var duration: TimeInterval {
+        end.timeIntervalSince(start)
+    }
+
     public var label: String {
-        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        let minutes = Int((duration / 60).rounded())
         let hours = minutes / 60
         let remainder = minutes % 60
         if hours == 0 {

@@ -7,6 +7,9 @@ public protocol HarvestClient {
     func company() async throws -> HarvestCompany
     func timeEntries(from: Day, to: Day, userId: Int64) async throws -> [TimeEntry]
     func projectAssignments() async throws -> [ProjectAssignment]
+    /// Budget vs. spent for every active project. Harvest only answers for
+    /// administrators and project managers; everyone else draws a 403.
+    func projectBudgets() async throws -> [ProjectBudget]
     func startTimer(projectId: Int64, taskId: Int64, spentDate: Day, notes: String?) async throws -> TimeEntry
     func createEntry(
         projectId: Int64,
