@@ -497,6 +497,26 @@ func runFavoritesTests() async {
         }
     }
 
+    await test("toggling a favorite adds it, toggling again removes it") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(!state.isFavorite(projectId: favorite.projectId, taskId: favorite.taskId), "nothing is a favorite yet")
+
+            state.toggleFavorite(favorite)
+            expect(state.favorites == [favorite], "the first toggle should add it")
+            expect(state.isFavorite(projectId: favorite.projectId, taskId: favorite.taskId), "it should now report as a favorite")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.favorites == [favorite], "the toggled favorite should survive a restart")
+
+            reopened.toggleFavorite(favorite)
+            expect(reopened.favorites.isEmpty, "the second toggle should remove it")
+
+            let again = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(again.favorites.isEmpty, "the removal should survive a restart too")
+        }
+    }
+
     await test("an empty or missing favorites file is not a failure") {
         try await withTemporaryDirectory { directory in
             let store = FavoritesStore(directory: directory)

@@ -62,7 +62,8 @@ struct EntryList: View {
             ProjectTaskPickerSheet(
                 title: "Start Timer",
                 actionLabel: "Start Timer",
-                showsNotes: true
+                showsNotes: true,
+                showsFavoriteToggle: true
             ) { assignment, task, notes in
                 Task {
                     await state.startTimer(projectId: assignment.project.id, taskId: task.id, notes: notes)

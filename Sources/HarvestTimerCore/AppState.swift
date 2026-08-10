@@ -437,6 +437,18 @@ public final class AppState {
         favoritesStore.save(favorites)
     }
 
+    public func isFavorite(projectId: Int64, taskId: Int64) -> Bool {
+        favorites.contains { $0.projectId == projectId && $0.taskId == taskId }
+    }
+
+    public func toggleFavorite(_ favorite: Favorite) {
+        if favorites.contains(where: { $0.id == favorite.id }) {
+            removeFavorite(favorite)
+        } else {
+            addFavorite(favorite)
+        }
+    }
+
     public func moveFavorite(from: Int, to: Int) {
         let reordered = FavoriteOrder.moving(favorites, from: from, to: to)
         guard reordered != favorites else { return }
