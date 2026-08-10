@@ -19,6 +19,8 @@ struct EntryList: View {
                     Label("Start Timer", systemImage: "play.circle")
                         .font(.callout)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.harvestGreen)
                 .controlSize(.small)
                 .pointingCursor()
                 .help("Start a timer for any project")
