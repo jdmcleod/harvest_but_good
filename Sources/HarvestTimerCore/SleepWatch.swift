@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 
-/// A stretch the machine spent asleep, so a stretch nobody worked either.
 public struct SleepGap: Equatable {
     public let start: Date
     public let end: Date
@@ -12,10 +11,9 @@ public struct SleepGap: Equatable {
     }
 }
 
-/// Watches the machine sleep and wake, so the AFK check has the real away
-/// window rather than a guess from how late a tick arrived.
-/// Only macOS knows when sleep began; see `AFKDetector.trustsIdleReading` for
-/// why the idle clock cannot say.
+/// Only macOS knows when sleep began, so the AFK check has the real away
+/// window rather than a guess from how late a tick arrived. See
+/// `AFKDetector.trustsIdleReading` for why the idle clock cannot say.
 @MainActor
 public final class SleepWatch {
     private var sleepStartedAt: Date?
