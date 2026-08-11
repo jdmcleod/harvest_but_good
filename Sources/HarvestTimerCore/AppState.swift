@@ -85,8 +85,7 @@ public final class AppState {
         sleepWatch: SleepWatch? = nil
     ) {
         self.idleSeconds = idleSeconds
-        // A test that says nothing about sleep gets a watch wired to a centre
-        // of its own, so no real sleep reaches it.
+        // A centre of its own, so no real sleep reaches a test.
         self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
         self.injectedClient = client
         self.eventLog = EventLog(directory: storageDirectory)
@@ -510,23 +509,18 @@ public final class AppState {
     }
 
     private func checkAFK(sinceLastTick: TimeInterval) {
-        // macOS reporting a sleep is the good answer. A tick arriving far later
-        // than its cadence is the fallback, for a process suspended without the
-        // machine sleeping — and for the sleep whose notification we missed.
+        // The tick gap is the fallback for what macOS did not report: a
+        // suspended process, or a missed notification.
         let sleep = sleepWatch.takePendingSleep()
         let slept = sleep != nil || !AFKDetector.trustsIdleReading(
             sinceLastTick: sinceLastTick,
             interval: Self.afkInterval.timeInterval
         )
-        // Nobody typed after the lid shut, so the gap starts there at the
-        // latest. This repairs a reading already written down, which matters
-        // because `lastActivityAt` otherwise only ever moves forward — one bad
-        // reading would bury the gap for good.
+        // Nobody typed after the lid shut. `min` repairs a bad reading already
+        // stored, which `max` below can never undo.
         if let sleep {
             lastActivityAt = min(lastActivityAt, sleep.start)
         }
-        // A sleep says only that somebody is back now. Where the idle clock
-        // puts the last input across a sleep is not to be believed.
         let currentActivity = slept ? Date.now : Date.now.addingTimeInterval(-idleSeconds())
         let updated = AFKDetector.evaluate(
             prompt: afkPrompt,

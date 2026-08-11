@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// A stretch the machine spent asleep, which is a stretch nobody spent working.
+/// A stretch the machine spent asleep, so a stretch nobody worked either.
 public struct SleepGap: Equatable {
     public let start: Date
     public let end: Date
@@ -12,12 +12,10 @@ public struct SleepGap: Equatable {
     }
 }
 
-/// Watches the machine going to sleep and waking up, so the AFK check has the
-/// real away window instead of guessing one from how late a tick arrived.
-///
-/// macOS says when sleep begins, which the idle clock cannot: on the far side
-/// of a sleep it counts from the wake, not from the last person at the
-/// keyboard. Knowing the moment the lid shut pins the start of the gap exactly.
+/// Watches the machine sleep and wake, so the AFK check has the real away
+/// window rather than a guess from how late a tick arrived.
+/// Only macOS knows when sleep began; see `AFKDetector.trustsIdleReading` for
+/// why the idle clock cannot say.
 @MainActor
 public final class SleepWatch {
     private var sleepStartedAt: Date?
@@ -47,23 +45,21 @@ public final class SleepWatch {
         for observer in observers { center.removeObserver(observer) }
     }
 
-    /// The sleep since the last call, if there was one. Reading it clears it,
-    /// so one sleep is counted once. Several sleeps between two reads merge
-    /// into the span they cover, which is the whole time nobody was here.
+    /// The sleep since the last call, if any. Reading clears it, so a sleep is
+    /// counted once. Several between two reads merge into the span they cover.
     public func takePendingSleep() -> SleepGap? {
         defer { pending = nil }
         return pending
     }
 
     func noteSleep(at date: Date) {
-        // A second warning without a wake in between keeps the first: the
-        // earlier moment is the one the away time starts at.
+        // Keep the earlier moment: that is where the away time starts.
         sleepStartedAt = sleepStartedAt ?? date
     }
 
     func noteWake(at date: Date) {
-        // A wake with no sleep recorded happens when the app started up during
-        // a dark wake. There is no window to report, so there is nothing to say.
+        // No sleep recorded means the app started during a dark wake, so there
+        // is no window to report.
         guard let sleepStartedAt else { return }
         self.sleepStartedAt = nil
         pending = SleepGap(start: min(pending?.start ?? sleepStartedAt, sleepStartedAt), end: date)

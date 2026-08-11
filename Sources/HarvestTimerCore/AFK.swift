@@ -28,9 +28,8 @@ public enum AFKDetector {
     /// before the timer started is nobody's to give back, so a break taken off
     /// the clock never prompts once the timer goes on again.
     ///
-    /// A prompt left unanswered grows through a further sleep. Waiting for an
-    /// answer must not cost the time spent waiting: somebody who glances at the
-    /// prompt, shuts the lid and comes back at noon is owed the morning too.
+    /// An unanswered prompt grows through a further sleep, so waiting to answer
+    /// does not cost the time spent waiting.
     public static func evaluate(
         prompt: AFKPrompt?,
         lastActivity: Date,
@@ -42,8 +41,8 @@ public enum AFKDetector {
     ) -> AFKPrompt? {
         if let prompt {
             guard sleptSinceLastCheck, currentActivity > prompt.end else { return prompt }
-            // The start holds, so the prompt keeps its identity and the open
-            // window is updated rather than replaced.
+            // Keeping the start keeps the id, so the open window updates
+            // instead of being replaced.
             return AFKPrompt(entryId: prompt.entryId, start: prompt.start, end: currentActivity)
         }
         guard toleranceSeconds > 0, let runningEntryId else { return nil }
@@ -54,13 +53,11 @@ public enum AFKDetector {
 }
 
 public extension AFKDetector {
-    /// Whether a tick's idle reading can be believed. Two ticks about one
-    /// interval apart bracket a stretch the app watched the whole way through,
-    /// so the reading stands. A tick landing much later than that followed a
-    /// sleep, and the idle clock on the far side of a sleep counts from the
-    /// wake rather than from the last person at the keyboard. A closed laptop
-    /// wakes itself hourly for maintenance, so believing those readings hands
-    /// the night back as though somebody had worked it.
+    /// Whether a tick's idle reading can be believed. Across a sleep the idle
+    /// clock counts from the wake, not from the last input, so a tick landing
+    /// much later than its cadence is reporting the wrong thing. A closed
+    /// laptop wakes hourly for maintenance, and each of those readings would
+    /// otherwise pass for somebody at the keyboard.
     static func trustsIdleReading(sinceLastTick: TimeInterval, interval: TimeInterval) -> Bool {
         sinceLastTick <= interval * 2
     }

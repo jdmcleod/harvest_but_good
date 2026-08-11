@@ -1,8 +1,7 @@
 import Foundation
 
 public extension Duration {
-    /// The interval as seconds, for comparing against the `Date` arithmetic the
-    /// rest of the app does.
+    /// The interval as seconds, to compare against `Date` arithmetic.
     var timeInterval: TimeInterval {
         let parts = components
         return TimeInterval(parts.seconds) + TimeInterval(parts.attoseconds) / 1e18

@@ -622,10 +622,8 @@ func runAFKLoopTests() async {
     await test("a night the machine slept through counts as the whole night") {
         try await withTemporaryDirectory { directory in
             // The night of 2026-08-10: timer on at 3:53pm, last keystroke at
-            // 4:40pm, lid open again at 8:05am. The laptop woke itself hourly
-            // in between, and the idle clock came back from the last of those
-            // wakes rather than from the keystroke, which cost the whole night
-            // bar 55 minutes.
+            // 4:40pm, lid open at 8:05am. The idle clock reported the last
+            // maintenance wake instead, which cost all but 55 minutes.
             let night = 15.0 * 3600 + 25 * 60
             let startedAt = Date.now.addingTimeInterval(-(night + 46 * 60))
             let fake = FakeHarvest(entries: [
@@ -686,9 +684,8 @@ func runAFKLoopTests() async {
 
     await test("the sleep window repairs a baseline a wake had already spoiled") {
         try await withTemporaryDirectory { directory in
-            // The gap start is wrong before the tick begins, as though a
-            // maintenance wake in the small hours had written it down. macOS
-            // knows when the lid shut, so the reading can be put right.
+            // The gap start is already wrong, as a maintenance wake would have
+            // left it. macOS knows when the lid shut, so it can be put right.
             let night = 15.0 * 3600 + 25 * 60
             let startedAt = Date.now.addingTimeInterval(-(night + 46 * 60))
             let lidShut = Date.now.addingTimeInterval(-night)
@@ -753,7 +750,6 @@ func runAFKLoopTests() async {
             let first = state.afkPrompt?.duration ?? 0
             expect(first >= 3 * 3600 - 5, "the first sleep should raise a prompt, got \(first)")
 
-            // Nobody answers, the lid shuts again, and the morning goes by.
             watch.noteSleep(at: Date.now.addingTimeInterval(-30))
             watch.noteWake(at: .now)
             state.afkTick()
