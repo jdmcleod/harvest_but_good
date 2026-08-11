@@ -10,6 +10,7 @@ struct ProjectTaskPickerSheet: View {
     /// Starting a timer can say what the time is for; editing an entry cannot,
     /// because the card already has a notes box of its own.
     var showsNotes = false
+    var showsFavoriteToggle = false
     var dismissesOnConfirm = true
     let onConfirm: (ProjectAssignment, NamedRef, String) -> Void
     @State private var search = ""
@@ -21,6 +22,11 @@ struct ProjectTaskPickerSheet: View {
 
     private var selectedAssignment: ProjectAssignment? {
         state.projectAssignments.first { $0.id == selectedAssignmentId }
+    }
+
+    private var selectedTask: NamedRef? {
+        guard let taskId = selectedTaskId else { return nil }
+        return selectedAssignment?.taskAssignments.first { $0.task.id == taskId }?.task
     }
 
     var body: some View {
@@ -43,6 +49,9 @@ struct ProjectTaskPickerSheet: View {
             }
 
             HStack {
+                if showsFavoriteToggle, let assignment = selectedAssignment, let task = selectedTask {
+                    favoriteToggle(assignment: assignment, task: task)
+                }
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button(actionLabel) { confirm() }
@@ -123,11 +132,27 @@ struct ProjectTaskPickerSheet: View {
         ProjectSearch.matches(in: state.projectAssignments, query: search)
     }
 
+    private func favoriteToggle(assignment: ProjectAssignment, task: NamedRef) -> some View {
+        let isFavorite = state.isFavorite(projectId: assignment.project.id, taskId: task.id)
+        return Button {
+            state.toggleFavorite(Favorite(
+                projectId: assignment.project.id,
+                taskId: task.id,
+                clientName: assignment.client.name,
+                projectName: assignment.project.name,
+                taskName: task.name
+            ))
+        } label: {
+            Image(systemName: isFavorite ? "star.fill" : "star")
+                .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .pointingCursor()
+        .help(isFavorite ? "Remove from favorites" : "Add to favorites")
+    }
+
     private func confirm() {
-        guard let assignment = selectedAssignment,
-              let taskId = selectedTaskId,
-              let task = assignment.taskAssignments.first(where: { $0.task.id == taskId })?.task
-        else { return }
+        guard let assignment = selectedAssignment, let task = selectedTask else { return }
         onConfirm(assignment, task, notes)
         if dismissesOnConfirm { dismiss() }
     }
