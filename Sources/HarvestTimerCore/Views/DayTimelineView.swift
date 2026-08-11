@@ -14,6 +14,7 @@ struct DayTimelineView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var markerY: CGFloat = 0
     @State private var hasAppliedDefaultView = false
+    @State private var showTimelineInfo = false
 
     private let scale = DayScale()
     private var startHour: Int { scale.startHour }
@@ -35,6 +36,16 @@ struct DayTimelineView: View {
             HStack {
                 Text("Timeline")
                     .font(.headline)
+                Image(systemName: "info.circle")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .onHover { showTimelineInfo = $0 }
+                    .popover(isPresented: $showTimelineInfo, arrowEdge: .bottom) {
+                        Text("The blocks shown here purposefully do not respond to edits of duration or backfilling time. This timeline is meant to surface the facts of the day regarding starts and stops and to provide visibility of breaks.")
+                            .font(.callout)
+                            .frame(width: 280)
+                            .padding(12)
+                    }
                 Spacer()
                 if blocks.contains(where: { modifiedIds.contains($0.entryId) }) {
                     legend
