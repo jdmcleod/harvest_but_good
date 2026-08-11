@@ -619,6 +619,151 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("a night the machine slept through counts as the whole night") {
+        try await withTemporaryDirectory { directory in
+            // The night of 2026-08-10: timer on at 3:53pm, last keystroke at
+            // 4:40pm, lid open again at 8:05am. The laptop woke itself hourly
+            // in between, and the idle clock came back from the last of those
+            // wakes rather than from the keystroke, which cost the whole night
+            // bar 55 minutes.
+            let night = 15.0 * 3600 + 25 * 60
+            let startedAt = Date.now.addingTimeInterval(-(night + 46 * 60))
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(startedAt),
+                    hours: 16.33,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { night - 55 * 60 }
+            )
+            await state.sync()
+
+            state.lastActivityAt = Date.now.addingTimeInterval(-night)
+            // The tick before this one ran before the lid closed, so this one
+            // arrives a night late.
+            state.now = Date.now.addingTimeInterval(-night)
+            state.afkTick()
+
+            expect(
+                state.afkPrompt.map { $0.duration >= night - 5 } == true,
+                "the whole night should count as away, got \(state.afkPrompt?.duration ?? -1)"
+            )
+        }
+    }
+
+    await test("a tick that came late leaves the last activity alone") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest(entries: [])
+            // Nothing running, so no prompt — the reading still must not be
+            // written down, or the gap is gone by the time somebody is back.
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            await state.sync()
+
+            let lastInput = Date.now.addingTimeInterval(-15 * 3600)
+            state.lastActivityAt = lastInput
+            state.now = Date.now.addingTimeInterval(-14 * 3600)
+            state.afkTick()
+            expect(
+                state.lastActivityAt == lastInput,
+                "a maintenance wake should not pass for somebody at the keyboard"
+            )
+
+            state.afkTick()
+            expect(
+                state.lastActivityAt > lastInput,
+                "a tick on its cadence should move the baseline on again"
+            )
+        }
+    }
+
+    await test("the sleep window repairs a baseline a wake had already spoiled") {
+        try await withTemporaryDirectory { directory in
+            // The gap start is wrong before the tick begins, as though a
+            // maintenance wake in the small hours had written it down. macOS
+            // knows when the lid shut, so the reading can be put right.
+            let night = 15.0 * 3600 + 25 * 60
+            let startedAt = Date.now.addingTimeInterval(-(night + 46 * 60))
+            let lidShut = Date.now.addingTimeInterval(-night)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(startedAt),
+                    hours: 16.33,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let watch = SleepWatch(center: NotificationCenter())
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { 0 },
+                sleepWatch: watch
+            )
+            await state.sync()
+
+            state.lastActivityAt = Date.now.addingTimeInterval(-55 * 60)
+            watch.noteSleep(at: lidShut)
+            watch.noteWake(at: .now)
+            state.afkTick()
+
+            expect(
+                state.afkPrompt.map { $0.duration >= night - 5 } == true,
+                "the sleep window should outrank the spoiled reading, got \(state.afkPrompt?.duration ?? -1)"
+            )
+        }
+    }
+
+    await test("an unanswered prompt grows through a second sleep") {
+        try await withTemporaryDirectory { directory in
+            let startedAt = Date.now.addingTimeInterval(-6 * 3600)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(startedAt),
+                    hours: 6,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let watch = SleepWatch(center: NotificationCenter())
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { 0 },
+                sleepWatch: watch
+            )
+            await state.sync()
+
+            watch.noteSleep(at: Date.now.addingTimeInterval(-3 * 3600))
+            watch.noteWake(at: .now)
+            state.afkTick()
+            let first = state.afkPrompt?.duration ?? 0
+            expect(first >= 3 * 3600 - 5, "the first sleep should raise a prompt, got \(first)")
+
+            // Nobody answers, the lid shuts again, and the morning goes by.
+            watch.noteSleep(at: Date.now.addingTimeInterval(-30))
+            watch.noteWake(at: .now)
+            state.afkTick()
+            expect(
+                state.afkPrompt.map { $0.duration > first } == true,
+                "the wait for an answer should be away time too"
+            )
+        }
+    }
+
     await test("the first open of the day lands on today") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)

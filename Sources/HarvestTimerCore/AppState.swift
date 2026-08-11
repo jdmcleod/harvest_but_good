@@ -26,6 +26,8 @@ public final class AppState {
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
+    /// Internal, not private, so a test can post sleeps through it.
+    let sleepWatch: SleepWatch
     /// The most recent input we have seen. Internal, not private, so a test
     /// can put it in the past instead of waiting out a tolerance.
     var lastActivityAt: Date = .now
@@ -57,8 +59,12 @@ public final class AppState {
         injectedClient ?? credentials.map { HarvestAPI(credentials: $0) }
     }
 
-    public init(idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds) {
+    public init(
+        idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds,
+        sleepWatch: SleepWatch? = nil
+    ) {
         self.idleSeconds = idleSeconds
+        self.sleepWatch = sleepWatch ?? SleepWatch()
         self.injectedClient = nil
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
@@ -75,9 +81,13 @@ public final class AppState {
     public init(
         client: HarvestClient,
         storageDirectory: URL,
-        idleSeconds: @escaping () -> TimeInterval = { 0 }
+        idleSeconds: @escaping () -> TimeInterval = { 0 },
+        sleepWatch: SleepWatch? = nil
     ) {
         self.idleSeconds = idleSeconds
+        // A test that says nothing about sleep gets a watch wired to a centre
+        // of its own, so no real sleep reaches it.
+        self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
         self.injectedClient = client
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
@@ -189,7 +199,7 @@ public final class AppState {
            !Calendar.current.isDate(now, inSameDayAs: previousNow) {
             goToToday()
         }
-        checkAFK()
+        checkAFK(sinceLastTick: now.timeIntervalSince(previousNow))
     }
 
     /// Call when the window comes to the front. The first open of a calendar
@@ -499,17 +509,37 @@ public final class AppState {
         )
     }
 
-    private func checkAFK() {
-        let currentActivity = Date.now.addingTimeInterval(-idleSeconds())
+    private func checkAFK(sinceLastTick: TimeInterval) {
+        // macOS reporting a sleep is the good answer. A tick arriving far later
+        // than its cadence is the fallback, for a process suspended without the
+        // machine sleeping — and for the sleep whose notification we missed.
+        let sleep = sleepWatch.takePendingSleep()
+        let slept = sleep != nil || !AFKDetector.trustsIdleReading(
+            sinceLastTick: sinceLastTick,
+            interval: Self.afkInterval.timeInterval
+        )
+        // Nobody typed after the lid shut, so the gap starts there at the
+        // latest. This repairs a reading already written down, which matters
+        // because `lastActivityAt` otherwise only ever moves forward — one bad
+        // reading would bury the gap for good.
+        if let sleep {
+            lastActivityAt = min(lastActivityAt, sleep.start)
+        }
+        // A sleep says only that somebody is back now. Where the idle clock
+        // puts the last input across a sleep is not to be believed.
+        let currentActivity = slept ? Date.now : Date.now.addingTimeInterval(-idleSeconds())
         let updated = AFKDetector.evaluate(
             prompt: afkPrompt,
             lastActivity: lastActivityAt,
             currentActivity: currentActivity,
             toleranceSeconds: Double(afkToleranceMinutes) * 60,
             runningEntryId: runningEntry?.id,
-            runningEntryStartedAt: runningEntry?.timerStartedAt
+            runningEntryStartedAt: runningEntry?.timerStartedAt,
+            sleptSinceLastCheck: slept
         )
-        lastActivityAt = max(lastActivityAt, currentActivity)
+        if !slept {
+            lastActivityAt = max(lastActivityAt, currentActivity)
+        }
         let isNew = updated != nil && afkPrompt == nil
         afkPrompt = updated
         if isNew { onAFKDetected?() }

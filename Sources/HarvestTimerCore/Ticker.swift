@@ -1,5 +1,14 @@
 import Foundation
 
+public extension Duration {
+    /// The interval as seconds, for comparing against the `Date` arithmetic the
+    /// rest of the app does.
+    var timeInterval: TimeInterval {
+        let parts = components
+        return TimeInterval(parts.seconds) + TimeInterval(parts.attoseconds) / 1e18
+    }
+}
+
 /// A job that repeats on a fixed interval. Owners keep one per loop, so the
 /// cadence is a value you can read rather than a literal buried in a task, and
 /// a test can run the work by hand instead of waiting.
