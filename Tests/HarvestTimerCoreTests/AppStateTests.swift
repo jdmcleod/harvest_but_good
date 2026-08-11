@@ -70,6 +70,40 @@ func runAppStateTests() async {
         }
     }
 
+    await test("the current week is only the one the clock is in") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            // Thursday 7 August 2025, so the week runs 4th to 8th.
+            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            state.selectedDay = state.now
+            expect(state.isViewingCurrentWeek, "today's own day is in the current week")
+
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
+            expect(state.isViewingCurrentWeek, "another day of the same week still counts")
+
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 1))!
+            expect(!state.isViewingCurrentWeek, "the week before is not the current one")
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 11))!
+            expect(!state.isViewingCurrentWeek, "the week after is not the current one")
+        }
+    }
+
+    await test("going back to this week lands on today") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            // Two weeks back, on a Tuesday rather than today's Thursday.
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 7, day: 22))!
+            expect(!state.isViewingCurrentWeek, "the setup should start away from this week")
+
+            state.goToToday()
+            expect(
+                calendar.isDate(state.selectedDay, inSameDayAs: state.now),
+                "expected today, got \(Day(state.selectedDay).name)"
+            )
+        }
+    }
+
     await test("weekly totals sum the whole week, billable entries separately") {
         try await withTemporaryDirectory { directory in
             let wednesday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!

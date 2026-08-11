@@ -48,11 +48,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.delegate = self
+        window.addTitlebarAccessoryViewController(makeThisWeekAccessory())
         hasRestoredFrame = window.setFrameUsingName("HarvestTimerMain")
         window.setFrameAutosaveName("HarvestTimerMain")
 
         state.onAFKDetected = { [weak self] in self?.showWindow() }
         showWindow()
+    }
+
+    /// The back-to-this-week button. A titlebar accessory rather than part of
+    /// `WeekHeader` because the titlebar holds nothing else, so the button
+    /// costs the header no room, and AppKit lays it out clear of the window
+    /// buttons on its own.
+    private func makeThisWeekAccessory() -> NSTitlebarAccessoryViewController {
+        let hosting = NSHostingView(rootView: ThisWeekButton().environment(state))
+        // The titlebar reads the width off this frame, and leaves an accessory
+        // it measures at zero collapsed for good. Auto layout does not get a
+        // say here, so the size is set outright.
+        hosting.frame = NSRect(origin: .zero, size: ThisWeekButton.slot)
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = hosting
+        accessory.layoutAttribute = .leading
+        return accessory
     }
 
     func windowWillClose(_ notification: Notification) {

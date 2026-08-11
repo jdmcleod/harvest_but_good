@@ -8,14 +8,19 @@ public struct WeekCalendar {
         self.calendar = calendar
     }
 
-    /// The five weekdays of the week `date` falls in. A Saturday or Sunday
-    /// belongs to the week that just finished.
-    public func week(containing date: Date) -> [Date] {
+    /// The Monday of the week `date` falls in. A Saturday or Sunday belongs to
+    /// the week that just finished, so both look back to it.
+    public func weekStart(containing date: Date) -> Date {
         let weekday = calendar.component(.weekday, from: date)
         let daysFromMonday = (weekday + 5) % 7
-        let monday = calendar.startOfDay(
+        return calendar.startOfDay(
             for: calendar.date(byAdding: .day, value: -daysFromMonday, to: date)!
         )
+    }
+
+    /// The five weekdays of the week `date` falls in.
+    public func week(containing date: Date) -> [Date] {
+        let monday = weekStart(containing: date)
         return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
     }
 
