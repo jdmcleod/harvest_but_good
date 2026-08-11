@@ -747,6 +747,44 @@ func runProjectBudgetTests() async {
     }
 }
 
+@Test("Break titles")
+@MainActor
+func runBreakTitleTests() async {
+    await test("a break's title survives a restart") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setBreakTitle("Lunch", forBreakId: "break-123")
+            expect(state.breakTitle(forBreakId: "break-123") == "Lunch", "the title should be there")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(
+                reopened.breakTitle(forBreakId: "break-123") == "Lunch",
+                "it should be read back from disk"
+            )
+        }
+    }
+
+    await test("a blank title takes the name away") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setBreakTitle("Lunch", forBreakId: "break-123")
+            state.setBreakTitle("   ", forBreakId: "break-123")
+            expect(state.breakTitle(forBreakId: "break-123") == nil, "the title should be gone")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.breakTitle(forBreakId: "break-123") == nil, "and stay gone on disk")
+        }
+    }
+
+    await test("a title is trimmed before it is kept") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setBreakTitle("  Walk the dog  ", forBreakId: "break-9")
+            expect(state.breakTitle(forBreakId: "break-9") == "Walk the dog", "whitespace should go")
+        }
+    }
+}
+
 @Test("Favorites")
 @MainActor
 func runFavoritesTests() async {

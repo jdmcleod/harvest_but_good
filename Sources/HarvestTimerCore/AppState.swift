@@ -13,6 +13,7 @@ public final class AppState {
     /// keep the event log and Harvest in step.
     public private(set) var book = EntryBook()
     public var favorites: [Favorite] = []
+    public private(set) var breakTitles: [String: String] = [:]
     var projectAssignments: [ProjectAssignment] = []
     public private(set) var projectBudgets: [Int64: ProjectBudget] = [:]
     public var now: Date = .now
@@ -42,6 +43,7 @@ public final class AppState {
     private let weekCalendar = WeekCalendar()
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
+    private let breakTitlesStore: BreakTitlesStore
     /// Set by tests, which stand in their own client rather than reach Harvest.
     private let injectedClient: HarvestClient?
     public static let syncInterval = Duration.seconds(30)
@@ -60,9 +62,11 @@ public final class AppState {
         self.injectedClient = nil
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
+        self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.shared.load()
         favorites = favoritesStore.load()
+        breakTitles = breakTitlesStore.load()
     }
 
     /// Builds a state that talks to `client` and keeps its files under
@@ -77,8 +81,10 @@ public final class AppState {
         self.injectedClient = client
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
+        self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         afkToleranceMinutes = 10
         favorites = favoritesStore.load()
+        breakTitles = breakTitlesStore.load()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -505,6 +511,21 @@ public final class AppState {
         await perform { api in
             projectAssignments = try await api.projectAssignments()
         }
+    }
+
+    public func breakTitle(forBreakId id: String) -> String? {
+        breakTitles[id]
+    }
+
+    /// Names a break on the timeline. A blank title takes the name away.
+    public func setBreakTitle(_ title: String, forBreakId id: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            breakTitles.removeValue(forKey: id)
+        } else {
+            breakTitles[id] = trimmed
+        }
+        breakTitlesStore.save(breakTitles)
     }
 
     public func addFavorite(_ favorite: Favorite) {
