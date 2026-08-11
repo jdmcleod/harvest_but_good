@@ -302,6 +302,23 @@ func runTimelineTests() {
         expect(TimelineBuilder.breaks(between: []).isEmpty, "empty day should have no breaks")
     }
 
+    test("break durations sum to the day's total break time") {
+        let blocks = TimelineBuilder.blocks(
+            from: [
+                event(.start, entry: 1, minutes: 0),
+                event(.stop, entry: 1, minutes: 30),
+                event(.start, entry: 2, minutes: 60),
+                event(.stop, entry: 2, minutes: 90),
+                event(.start, entry: 3, minutes: 105),
+                event(.stop, entry: 3, minutes: 120),
+            ],
+            now: base.addingTimeInterval(7200),
+            running: []
+        )
+        let total = TimelineBuilder.breaks(between: blocks).reduce(0) { $0 + $1.duration }
+        expect(total == 2700, "expected 45 minutes of breaks, got \(total / 60) minutes")
+    }
+
     test("break label formats minutes and hours") {
         func breakLabel(minutes: Double) -> String {
             TimelineBreak(start: base, end: base.addingTimeInterval(minutes * 60)).label

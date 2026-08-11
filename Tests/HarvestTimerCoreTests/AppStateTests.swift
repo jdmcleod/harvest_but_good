@@ -461,6 +461,27 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("a synced state can point at a project's page on the Harvest site") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            let state = AppState(client: fake, storageDirectory: directory)
+            expect(state.projectURL(for: 10) == nil, "before a sync the account's address is unknown")
+
+            await state.sync()
+            expect(
+                state.projectURL(for: 10) == URL(string: "https://testco.harvestapp.com/projects/10"),
+                "got \(String(describing: state.projectURL(for: 10)))"
+            )
+
+            await state.sync()
+            let fetches = fake.calls.filter { $0 == "company" }
+            expect(fetches.count == 1, "the address should be asked for once, asked \(fetches.count) times")
+
+            state.removeCredentials()
+            expect(state.projectURL(for: 10) == nil, "the address should go with the token")
+        }
+    }
+
     await test("a turn of the AFK loop moves the clock on") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
@@ -468,6 +489,155 @@ func runAFKLoopTests() async {
             state.afkTick()
             expect(state.now.timeIntervalSinceNow > -1, "the tick should bring `now` up to date")
         }
+    }
+}
+
+private func budget(
+    project: Int64,
+    by budgetBy: String = "project",
+    budget total: Double?,
+    spent: Double?,
+    remaining: Double?
+) -> ProjectBudget {
+    ProjectBudget(
+        projectId: project,
+        budgetBy: budgetBy,
+        budget: total,
+        budgetSpent: spent,
+        budgetRemaining: remaining
+    )
+}
+
+@Test("Project budgets")
+@MainActor
+func runProjectBudgetTests() async {
+    await test("a sync brings the budgets in, keyed by project") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            fake.budgets = [
+                budget(project: 10, budget: 40, spent: 27.5, remaining: 12.5),
+                budget(project: 11, by: "project_cost", budget: 10000, spent: 5800, remaining: 4200),
+            ]
+            let state = await syncedState(fake, directory: directory)
+            expect(state.projectBudgets[10]?.budgetRemaining == 12.5, "project 10's budget should be there")
+            expect(state.projectBudgets[11]?.budgetIsMonetary == true, "so should project 11's")
+        }
+    }
+
+    await test("budgets are not asked for again inside the refresh interval") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            let state = await syncedState(fake, directory: directory)
+            await state.sync()
+            let fetches = fake.calls.filter { $0 == "projectBudgets" }
+            expect(fetches.count == 1, "two syncs close together should fetch once, fetched \(fetches.count) times")
+
+            state.lastBudgetFetchAt = Date.now.addingTimeInterval(-AppState.budgetRefreshInterval - 1)
+            await state.sync()
+            let after = fake.calls.filter { $0 == "projectBudgets" }
+            expect(after.count == 2, "past the interval a sync should fetch again, fetched \(after.count) times")
+        }
+    }
+
+    await test("a token without budget access turns the feature off quietly") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            fake.budgetsError = HarvestAPIError.forbidden
+            let state = await syncedState(fake, directory: directory)
+            expect(state.projectBudgets.isEmpty, "nothing should be shown")
+            expect(state.syncError == nil, "a missing role is not an error worth a banner")
+
+            await state.sync()
+            let fetches = fake.calls.filter { $0 == "projectBudgets" }
+            expect(fetches.count == 1, "the 403 should not be asked for again, fetched \(fetches.count) times")
+        }
+    }
+
+    await test("other budget failures keep what was shown and stay quiet") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            fake.budgets = [budget(project: 10, budget: 40, spent: 20, remaining: 20)]
+            let state = await syncedState(fake, directory: directory)
+            expect(state.projectBudgets[10] != nil, "the first fetch should land")
+
+            fake.budgetsError = HarvestAPIError.network(URLError(.timedOut))
+            state.lastBudgetFetchAt = .distantPast
+            await state.sync()
+            expect(state.projectBudgets[10] != nil, "a flaky fetch should not blank the bars")
+            expect(state.syncError == nil, "and should not raise the banner")
+        }
+    }
+
+    await test("removing the token clears the budgets") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            fake.budgets = [budget(project: 10, budget: 40, spent: 20, remaining: 20)]
+            let state = await syncedState(fake, directory: directory)
+            expect(!state.projectBudgets.isEmpty, "the budgets should be there first")
+
+            state.removeCredentials()
+            expect(state.projectBudgets.isEmpty, "and gone with the token")
+            expect(state.lastBudgetFetchAt == nil, "along with the fetch stamp")
+        }
+    }
+
+    test("the summary gives what remains, compactly, with its share of the budget") {
+        let money = budget(project: 1, by: "project_cost", budget: 10000, spent: 5800, remaining: 4200)
+        expect(
+            money.remainingSummary == "Budget remaining: $4.2k (42%)",
+            "got \(money.remainingSummary ?? "nil")"
+        )
+
+        let round = budget(project: 1, by: "project_cost", budget: 10000, spent: 6000, remaining: 4000)
+        expect(
+            round.remainingSummary == "Budget remaining: $4k (40%)",
+            "a round figure should not carry a decimal, got \(round.remainingSummary ?? "nil")"
+        )
+
+        let small = budget(project: 1, by: "project_cost", budget: 2000, spent: 1050, remaining: 950)
+        expect(
+            small.remainingSummary == "Budget remaining: $950 (48%)",
+            "under a thousand stays in plain dollars, got \(small.remainingSummary ?? "nil")"
+        )
+
+        let hours = budget(project: 1, budget: 40, spent: 27.5, remaining: 12.5)
+        expect(
+            hours.remainingSummary == "Budget remaining: 12.5h (31%)",
+            "got \(hours.remainingSummary ?? "nil")"
+        )
+
+        let over = budget(project: 1, by: "project_cost", budget: 10000, spent: 10500, remaining: -500)
+        expect(
+            over.remainingSummary == "Over budget by $500",
+            "got \(over.remainingSummary ?? "nil")"
+        )
+
+        let none = budget(project: 1, budget: nil, spent: nil, remaining: nil)
+        expect(none.remainingSummary == nil, "no budget, no summary")
+        expect(none.remainingDescription == nil, "and nothing to describe")
+
+        let zero = budget(project: 1, budget: 0, spent: 5, remaining: -5)
+        expect(zero.remainingSummary == nil, "a zero budget makes no summary")
+    }
+
+    test("the description talks in hours or money to match the budget") {
+        let hours = budget(project: 1, budget: 40, spent: 27.5, remaining: 12.5)
+        expect(
+            hours.remainingDescription == "12.5h left of 40h",
+            "got \(hours.remainingDescription ?? "nil")"
+        )
+
+        let money = budget(project: 1, by: "project_cost", budget: 10000, spent: 5800, remaining: 4200)
+        expect(
+            money.remainingDescription == "$4,200 left of $10,000",
+            "got \(money.remainingDescription ?? "nil")"
+        )
+
+        let over = budget(project: 1, budget: 40, spent: 42, remaining: -2)
+        expect(
+            over.remainingDescription == "2h over the 40h budget",
+            "got \(over.remainingDescription ?? "nil")"
+        )
     }
 }
 
