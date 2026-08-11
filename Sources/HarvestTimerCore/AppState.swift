@@ -83,6 +83,17 @@ public final class AppState {
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
 
+    /// Whether the week on screen is the one today falls in, so a control can
+    /// offer a way back only when there is somewhere to come back from.
+    public var isViewingCurrentWeek: Bool {
+        weekCalendar.weekStart(containing: selectedDay)
+            == weekCalendar.weekStart(containing: now)
+    }
+
+    public func goToToday() {
+        selectedDay = now
+    }
+
     public func entries(forDay day: Date) -> [TimeEntry] {
         entries(onDate: Day(day))
     }
@@ -164,7 +175,7 @@ public final class AppState {
         // what was today. Anyone browsing another day stays where they are.
         if Calendar.current.isDate(selectedDay, inSameDayAs: previousNow),
            !Calendar.current.isDate(now, inSameDayAs: previousNow) {
-            selectedDay = now
+            goToToday()
         }
         checkAFK()
     }
@@ -175,7 +186,7 @@ public final class AppState {
     public func windowDidOpen() {
         now = .now
         if !Calendar.current.isDate(lastOpenedAt, inSameDayAs: now) {
-            selectedDay = now
+            goToToday()
         }
         lastOpenedAt = now
     }
