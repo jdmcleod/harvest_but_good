@@ -97,6 +97,15 @@ fi
 
 codesign --force --sign "$SIGN_IDENTITY" "$STAGED_APP"
 
+# Quit only once the build has succeeded and been signed, so a broken build
+# leaves the working app running. The install below replaces the bundle a
+# running copy is reading from, so it has to go first either way.
+if pgrep -xq "$APP_NAME"; then
+    echo "Quitting running ${APP_NAME}..."
+    pkill -x "$APP_NAME"
+    while pgrep -xq "$APP_NAME"; do sleep 0.2; done
+fi
+
 # Replace rather than merge: dropping a new bundle on top of an old one leaves
 # whatever the old one had and the new one doesn't, and a stale file inside a
 # signed bundle breaks the signature. Check what is there before removing it,
@@ -143,9 +152,6 @@ rm -rf "$STAGED_APP"
 codesign --verify --strict "$INSTALLED_APP"
 
 echo "Installed $INSTALLED_APP"
-if pgrep -x "$APP_NAME" >/dev/null; then
-    echo "The copy already running is the old build. Quit it and reopen to pick"
-    echo "this one up."
-else
-    echo "Run it with:  open \"$INSTALLED_APP\""
-fi
+
+open "$INSTALLED_APP"
+echo "Launched $APP_NAME."
