@@ -341,15 +341,26 @@ public final class AppState {
         }
     }
 
-    /// Takes `hours` off one entry and puts them on another project and task,
-    /// on the same day. Merges into a matching entry when one already exists.
-    /// A running timer keeps running: on the source if time is left on it,
-    /// otherwise on the destination it just moved to.
-    public func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
+    /// Takes `hours` off one entry and puts them on another, on the same day.
+    /// `destinationEntryId` picks an exact entry — the only way to reach one
+    /// that shares the source's project and task and differs just by notes;
+    /// without it the move merges into any entry matching the project and
+    /// task, or creates one. A running timer keeps running: on the source if
+    /// time is left on it, otherwise on the destination it just moved to.
+    public func moveTime(
+        _ entry: TimeEntry,
+        hours: Double,
+        projectId: Int64,
+        taskId: Int64,
+        destinationEntryId: Int64? = nil
+    ) async {
         var source = currentVersion(of: entry)
-        guard projectId != source.project.id || taskId != source.task.id,
-              hours > 0, liveHours(for: source) > 0
-        else { return }
+        guard hours > 0, liveHours(for: source) > 0 else { return }
+        if let destinationEntryId {
+            guard destinationEntryId != source.id else { return }
+        } else {
+            guard projectId != source.project.id || taskId != source.task.id else { return }
+        }
         let wasRunning = source.isRunning
 
         await perform { api in
@@ -362,8 +373,10 @@ public final class AppState {
             }
             guard let plan = TimeMove.plan(sourceHours: source.hours, requested: hours) else { return }
             let destination = entries(onDate: source.spentDate).first {
-                $0.project.id == projectId && $0.task.id == taskId
+                if let destinationEntryId { return $0.id == destinationEntryId }
+                return $0.project.id == projectId && $0.task.id == taskId
             }
+            let landedOn: TimeEntry
             if let destination {
                 let updated = try await api.updateHours(
                     entryId: destination.id,
@@ -371,6 +384,7 @@ public final class AppState {
                 )
                 logEdit(updated)
                 apply(updated)
+                landedOn = updated
             } else {
                 let created = try await api.createEntry(
                     projectId: projectId,
@@ -380,6 +394,7 @@ public final class AppState {
                     notes: source.notes
                 )
                 apply(created)
+                landedOn = created
             }
 
             if plan.emptiesSource {
@@ -389,12 +404,28 @@ public final class AppState {
             }
 
             if wasRunning {
-                await startTimer(
-                    projectId: plan.emptiesSource ? projectId : source.project.id,
-                    taskId: plan.emptiesSource ? taskId : source.task.id
-                )
+                await restartTimer(on: plan.emptiesSource ? landedOn : source)
             }
             await sync()
+        }
+    }
+
+    /// Picks a stopped entry's timer back up, keeping its notes — unlike
+    /// `startTimer`, which matches on empty notes and would leave a noted
+    /// entry behind for a fresh unnamed copy.
+    private func restartTimer(on entry: TimeEntry) async {
+        await perform { api in
+            let restarted = try await api.restart(entryId: entry.id)
+            eventLog.append(
+                TimerEvent(
+                    entryId: restarted.id,
+                    action: .start,
+                    timestamp: .now,
+                    projectId: restarted.project.id
+                ),
+                day: restarted.spentDate
+            )
+            apply(restarted)
         }
     }
 

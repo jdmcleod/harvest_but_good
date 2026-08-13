@@ -314,6 +314,46 @@ private func runMoveTimeStateTests() async {
         }
     }
 
+    await test("naming a destination entry lands on it, even sharing the source's project and task") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 2, project: 10, task: 100, notes: "rates stuff"),
+                entry(id: 2, day: today, hours: 1, project: 10, task: 100, notes: "meeting"),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.moveTime(
+                state.entry(withId: 1)!,
+                hours: 0.5,
+                projectId: 10,
+                taskId: 100,
+                destinationEntryId: 2
+            )
+
+            expect(fake.entry(2)?.hours == 1.5, "the named entry should absorb the time")
+            expect(fake.entry(1)?.hours == 1.5, "the source should keep the rest")
+            expect(fake.entries.count == 2, "no third entry should appear")
+        }
+    }
+
+    await test("a partial move restarts the source entry itself, not an unnamed copy") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 2, project: 10, task: 100, running: true, notes: "rates stuff"),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+
+            expect(fake.calls.contains("restart(1)"), "the source should pick its own timer back up")
+            expect(fake.entries.count == 2, "only the destination should be new, got \(fake.entries.count)")
+            expect(fake.runningEntry?.id == 1, "the source should be the one running")
+            expect(fake.entry(1)?.notes == "rates stuff", "its notes should survive")
+        }
+    }
+
     await test("moving the whole entry deletes the source") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
