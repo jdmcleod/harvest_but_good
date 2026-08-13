@@ -214,6 +214,33 @@ func runAppStateTests() async {
         }
     }
 
+    await test("editing a running entry's duration keeps it running and counts on from there") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100, running: true),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            // Half an hour of live time has piled up on top of the synced hours.
+            state.now = state.lastSyncAt.addingTimeInterval(1800)
+            expect(state.liveHours(for: state.entry(withId: 1)!) == 1.5, "the timer should read 1.5 first")
+
+            await state.updateHours(state.entry(withId: 1)!, hours: 3)
+            let edited = state.entry(withId: 1)!
+            expect(edited.isRunning, "the timer should still be running after the edit")
+            expect(fake.entry(1)?.isRunning == true, "and Harvest should still call it running")
+            expect(edited.hours == 3, "the typed value should land")
+            expect(
+                state.liveHours(for: edited) == 3,
+                "the live clock should restart from the typed value, not stack the old 30 minutes on top"
+            )
+
+            state.now = state.lastSyncAt.addingTimeInterval(900)
+            expect(state.liveHours(for: edited) == 3.25, "and keep counting up from there")
+        }
+    }
+
     await test("changing an entry's project keeps its hours") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
