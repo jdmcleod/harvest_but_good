@@ -6,7 +6,6 @@ cd "$(dirname "$0")/.."
 APP_NAME="HarvestButGood"
 PRODUCT_NAME="HarvestTimer"
 BUILD_DIR=".build/release"
-BUNDLE_ID="com.rolemodel.HarvestTimer"
 # The bundle is assembled here and then moved, so nothing launchable is left
 # behind. Two copies of the app cost you a duplicate Spotlight hit and a second
 # Keychain prompt, because the credentials trust one path and you launch the
@@ -62,8 +61,6 @@ cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
-    <key>NSHumanReadableCopyright</key>
-    <string>RoleModel Software</string>
 </dict>
 </plist>
 PLIST
@@ -102,6 +99,9 @@ codesign --force --sign "$SIGN_IDENTITY" "$STAGED_APP"
 # whatever the old one had and the new one doesn't, and a stale file inside a
 # signed bundle breaks the signature. Check what is there before removing it,
 # since this deletes a directory in $INSTALL_DIR.
+BUNDLE_ID="$(
+    defaults read "$STAGED_APP/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || true
+)"
 if [ -e "$INSTALLED_APP" ]; then
     installed_id="$(
         defaults read "$INSTALLED_APP/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || true
