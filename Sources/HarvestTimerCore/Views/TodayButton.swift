@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// A way back to the week today falls in, for when the header chevrons have
-/// taken you somewhere else.
-public struct ThisWeekButton: View {
+/// A way back to today, for when the header chevrons or the day tabs have taken
+/// you somewhere else.
+public struct TodayButton: View {
     @Environment(AppState.self) private var state
 
     public init() {}
@@ -27,7 +27,7 @@ public struct ThisWeekButton: View {
 
     public var body: some View {
         ZStack {
-            if !state.isViewingCurrentWeek {
+            if !state.isViewingToday {
                 Button {
                     state.goToToday()
                 } label: {
@@ -39,7 +39,7 @@ public struct ThisWeekButton: View {
                 .buttonStyle(.plain)
                 .pointingCursor()
                 .foregroundStyle(.white)
-                .help("Back to this week")
+                .help("Back to today")
             }
         }
         .frame(width: Self.slot.width, height: Self.slot.height)

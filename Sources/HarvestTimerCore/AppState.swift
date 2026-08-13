@@ -83,11 +83,17 @@ public final class AppState {
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
 
-    /// Whether the week on screen is the one today falls in, so a control can
-    /// offer a way back only when there is somewhere to come back from.
-    public var isViewingCurrentWeek: Bool {
-        weekCalendar.weekStart(containing: selectedDay)
-            == weekCalendar.weekStart(containing: now)
+    /// Whether the day on screen is the one today falls in, so a control can
+    /// offer a way back only when there is somewhere to come back from. A day
+    /// earlier in this same week counts as somewhere else, so the way back is
+    /// on offer there too.
+    public var isViewingToday: Bool { isToday(selectedDay) }
+
+    /// Whether `day` is the one the clock is in. Goes through `now` rather than
+    /// the system clock so a test can move the day without waiting out a
+    /// midnight, and so a stale `now` never marks two days as today at once.
+    public func isToday(_ day: Date) -> Bool {
+        Calendar.current.isDate(day, inSameDayAs: now)
     }
 
     public func goToToday() {

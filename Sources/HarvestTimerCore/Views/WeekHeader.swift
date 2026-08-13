@@ -70,7 +70,16 @@ private struct DayTab: View {
     }
 
     private var isToday: Bool {
-        Calendar.current.isDateInToday(day)
+        state.isToday(day)
+    }
+
+    /// Selection is the solid border; today keeps a fainter one of its own so
+    /// you can still pick it out of the row after clicking another day. The two
+    /// land on the same tab often enough that selection has to win outright,
+    /// otherwise today would read as the dimmer of the two while selected.
+    private var borderColor: Color {
+        if isSelected { return .white }
+        return isToday ? .white.opacity(0.35) : .clear
     }
 
     var body: some View {
@@ -93,11 +102,12 @@ private struct DayTab: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(isSelected ? Color.white : .clear, lineWidth: 1)
+                    .strokeBorder(borderColor, lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .pointingCursor()
+        .help(isToday ? "Today" : day.formatted(.dateTime.weekday(.wide).month().day()))
     }
 }
