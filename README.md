@@ -45,8 +45,7 @@ So here's the app Harvest should have shipped.
 git clone git@github.com:jdmcleod/harvest_but_good.git
 cd harvest_but_good
 Scripts/create-signing-cert.sh   # once — see below
-Scripts/build-app.sh
-cp -R dist/HarvestButGood.app /Applications/
+Scripts/build-app.sh              # builds and installs to /Applications
 open /Applications/HarvestButGood.app
 ```
 
@@ -58,7 +57,9 @@ Without a signing identity the app gets an ad-hoc signature, which changes with 
 
 `Scripts/create-signing-cert.sh` makes a self-signed code-signing certificate called `HarvestButGood Dev`, puts it in your login Keychain, and marks it trusted (one `sudo` prompt). `Scripts/build-app.sh` picks it up automatically. Already have an Apple Development certificate? Skip the script — the build prefers that one, or whatever you set in `CODESIGN_IDENTITY`.
 
-The first launch after signing still asks for the Keychain once. Click **Always Allow** and it stays quiet from then on.
+The first launch after signing still asks for the Keychain. Click **Always Allow** rather than **Allow** — "Allow" covers that one read and nothing more, so the next launch asks again.
+
+A self-signed certificate only gets you halfway. It carries no Team ID, and macOS ties the Keychain to the certificate only when there is one; without it, access is pinned to that exact build's hash. So the first launch after each rebuild asks once more, and it is another **Always Allow**. An Apple Development identity has a Team ID and is rid of it for good.
 
 ## Connect to Harvest
 
