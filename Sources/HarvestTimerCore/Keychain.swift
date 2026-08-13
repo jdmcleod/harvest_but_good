@@ -8,27 +8,54 @@ struct Keychain {
 
     let service: String
 
-    struct Credentials: Equatable {
+    struct Credentials: Equatable, Codable {
         let token: String
         let accountId: String
     }
 
+    /// One item, not two. macOS asks permission per keychain item, so a token
+    /// and an account stored apart meant two password prompts every launch.
+    static let account = "credentials"
+
+    /// What versions before the single-item move wrote, kept only so those
+    /// installs can be read once and rewritten.
+    private static let legacyAccounts = (token: "token", accountId: "accountId")
+
     /// Both halves or nothing: a token without an account is no use, and
     /// leaving one behind would look like being signed in.
     func load() -> Credentials? {
-        guard let token = read(account: "token"),
-              let accountId = read(account: "accountId") else { return nil }
-        return Credentials(token: token, accountId: accountId)
+        if let json = read(account: Self.account),
+           let credentials = try? JSONDecoder().decode(Credentials.self, from: Data(json.utf8)) {
+            return credentials
+        }
+        return migrateLegacyCredentials()
     }
 
     func save(_ credentials: Credentials) throws {
-        try write(account: "token", value: credentials.token)
-        try write(account: "accountId", value: credentials.accountId)
+        let json = try JSONEncoder().encode(credentials)
+        try write(account: Self.account, value: String(decoding: json, as: UTF8.self))
+        clearLeg()
     }
 
     func clear() {
-        delete(account: "token")
-        delete(account: "accountId")
+        delete(account: Self.account)
+        clearLeg()
+    }
+
+    /// Reads the old pair — costing the two prompts one last time — and writes
+    /// them back as one item so the next launch only asks once. A failed
+    /// rewrite is not fatal: the credentials are still good for this run.
+    private func migrateLegacyCredentials() -> Credentials? {
+        guard let token = read(account: Self.legacyAccounts.token),
+              let accountId = read(account: Self.legacyAccounts.accountId) else { return nil }
+        let credentials = Credentials(token: token, accountId: accountId)
+        try? save(credentials)
+        return credentials
+    }
+
+    private func clearLeg() {
+        delete(account: Self.legacyAccounts.token)
+        delete(account: Self.legacyAccounts.accountId)
     }
 
     func read(account: String) -> String? {
