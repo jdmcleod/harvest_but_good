@@ -70,31 +70,63 @@ func runAppStateTests() async {
         }
     }
 
-    await test("the current week is only the one the clock is in") {
+    await test("today is only the day the clock is in") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             // Thursday 7 August 2025, so the week runs 4th to 8th.
             state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
             state.selectedDay = state.now
-            expect(state.isViewingCurrentWeek, "today's own day is in the current week")
+            expect(state.isViewingToday, "the clock's own day is today")
 
+            // The whole point of the button: another day of this same week is
+            // somewhere to come back from, where the week check said otherwise.
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
-            expect(state.isViewingCurrentWeek, "another day of the same week still counts")
+            expect(!state.isViewingToday, "Monday of this week is not today")
+            expect(state.isToday(state.now), "Thursday is still today whatever is selected")
 
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 1))!
-            expect(!state.isViewingCurrentWeek, "the week before is not the current one")
+            expect(!state.isViewingToday, "a day in the week before is not today")
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 11))!
-            expect(!state.isViewingCurrentWeek, "the week after is not the current one")
+            expect(!state.isViewingToday, "a day in the week after is not today")
         }
     }
 
-    await test("going back to this week lands on today") {
+    await test("the day tabs read today off the app's clock, not the system's") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            let thursday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7, hour: 23))!
+            expect(state.isToday(thursday), "any hour of the clock's day counts as today")
+            expect(
+                !state.isToday(.now),
+                "the real date should not read as today while the clock sits in 2025"
+            )
+        }
+    }
+
+    await test("going back to today lands on today") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
             // Two weeks back, on a Tuesday rather than today's Thursday.
             state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 7, day: 22))!
-            expect(!state.isViewingCurrentWeek, "the setup should start away from this week")
+            expect(!state.isViewingToday, "the setup should start away from today")
+
+            state.goToToday()
+            expect(
+                calendar.isDate(state.selectedDay, inSameDayAs: state.now),
+                "expected today, got \(Day(state.selectedDay).name)"
+            )
+            expect(state.isViewingToday, "and the way back should stop being on offer")
+        }
+    }
+
+    await test("going back to today from another day of this same week") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 5))!
+            expect(!state.isViewingToday, "Tuesday of this week is somewhere to come back from")
 
             state.goToToday()
             expect(
