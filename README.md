@@ -71,6 +71,20 @@ The app walks you through this on first launch, but here's the shape of it:
 
 Both values go straight into the macOS Keychain. Revoke the token from that same Harvest page whenever you like.
 
+## Staying up to date
+
+The build stamps the commit it came from into the app bundle. Open the gear, and **Check for Updates** asks GitHub what has landed on `main` since then. It tells you and stops there — it downloads nothing and replaces nothing:
+
+```sh
+git pull && Scripts/build-app.sh
+```
+
+Quit and reopen afterwards. The card is honest about the awkward cases: a build made with uncommitted changes says so, and a build from your own branch is told it's off `main` rather than behind it.
+
+Nothing is checked unless you ask. The check needs no token, because the repo is public, but that also means GitHub's anonymous rate limit applies — roughly 60 checks an hour from one address, far more than anyone needs.
+
+If you want this to become a real one-click updater, [Sparkle](https://github.com/sparkle-project/Sparkle) is the standard answer. It wants a Developer ID certificate and notarized builds first — worth knowing that the same Developer ID also puts an end to the Keychain prompts above.
+
 ## The fine print
 
 Timers started or stopped elsewhere (web, phone) still show up in the entry list, but they won't draw timeline blocks — Harvest's API keeps those timestamps to itself. Local data (favorites and the start/stop log) lives in `~/Library/Application Support/HarvestTimer/`.

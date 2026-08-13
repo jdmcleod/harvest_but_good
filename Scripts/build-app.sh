@@ -15,6 +15,16 @@ STAGED_APP="dist/${APP_NAME}.app"
 INSTALL_DIR="${INSTALL_DIR:-/Applications}"
 INSTALLED_APP="${INSTALL_DIR}/${APP_NAME}.app"
 
+# Stamped into the bundle so the app can ask GitHub what has landed since it
+# was built. Tracked files only: an untracked scratch file changes nothing that
+# ends up in the binary, and calling that dirty would cry wolf.
+GIT_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    GIT_DIRTY="true"
+else
+    GIT_DIRTY="false"
+fi
+
 swift build -c release --product "$PRODUCT_NAME"
 
 rm -rf "$STAGED_APP"
@@ -23,7 +33,9 @@ mkdir -p "$STAGED_APP/Contents/MacOS" "$STAGED_APP/Contents/Resources"
 cp "$BUILD_DIR/$PRODUCT_NAME" "$STAGED_APP/Contents/MacOS/$APP_NAME"
 cp Resources/AppIcon.icns "$STAGED_APP/Contents/Resources/AppIcon.icns"
 
-cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
+# Unquoted, so the git stamps below expand. Nothing else in here needs
+# escaping: the plist carries no dollar signs, backticks, or backslashes.
+cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -42,6 +54,10 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>GitCommit</key>
+    <string>${GIT_COMMIT}</string>
+    <key>GitDirty</key>
+    <string>${GIT_DIRTY}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
