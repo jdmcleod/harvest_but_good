@@ -11,6 +11,9 @@ struct MoveTimeSheet: View {
     @State private var search = ""
     @State private var destinationProjectId: Int64?
     @State private var destinationTaskId: Int64?
+    /// Set when the pick is one of the day's entries, so the move lands on
+    /// that exact entry even when another shares its project and task.
+    @State private var destinationEntryId: Int64?
     /// Set while drilling into a project's tasks.
     @State private var browsingAssignmentId: Int64?
     @FocusState private var amountFocused: Bool
@@ -27,6 +30,7 @@ struct MoveTimeSheet: View {
                     browsingAssignmentId = nil
                     destinationProjectId = nil
                     destinationTaskId = nil
+                    destinationEntryId = nil
                 }
             } else {
                 destinationStep
@@ -82,8 +86,9 @@ struct MoveTimeSheet: View {
                             title: other.project.name,
                             subtitle: other.task.name,
                             detail: Hours.formatted(other.hours),
-                            isSelected: isSelected(projectId: other.project.id, taskId: other.task.id)
+                            isSelected: destinationEntryId == other.id
                         ) {
+                            destinationEntryId = other.id
                             destinationProjectId = other.project.id
                             destinationTaskId = other.task.id
                         }
@@ -99,6 +104,7 @@ struct MoveTimeSheet: View {
                         browsingAssignmentId = match.assignment.id
                         destinationProjectId = match.assignment.project.id
                         destinationTaskId = match.defaultTaskId
+                        destinationEntryId = nil
                     }
                 }
                 if matchingProjects.isEmpty && dayEntries.isEmpty {
@@ -147,14 +153,16 @@ struct MoveTimeSheet: View {
         return hours
     }
 
-    private func isSelected(projectId: Int64, taskId: Int64) -> Bool {
-        destinationProjectId == projectId && destinationTaskId == taskId
-    }
-
     private func move() {
         guard let amount, let projectId = destinationProjectId, let taskId = destinationTaskId else { return }
         Task {
-            await state.moveTime(entry, hours: amount, projectId: projectId, taskId: taskId)
+            await state.moveTime(
+                entry,
+                hours: amount,
+                projectId: projectId,
+                taskId: taskId,
+                destinationEntryId: destinationEntryId
+            )
         }
         dismiss()
     }

@@ -13,6 +13,7 @@ public final class AppState {
     /// keep the event log and Harvest in step.
     public private(set) var book = EntryBook()
     public var favorites: [Favorite] = []
+    public private(set) var breakTitles: [String: String] = [:]
     var projectAssignments: [ProjectAssignment] = []
     public private(set) var projectBudgets: [Int64: ProjectBudget] = [:]
     public var now: Date = .now
@@ -42,6 +43,7 @@ public final class AppState {
     private let weekCalendar = WeekCalendar()
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
+    private let breakTitlesStore: BreakTitlesStore
     /// Set by tests, which stand in their own client rather than reach Harvest.
     private let injectedClient: HarvestClient?
     public static let syncInterval = Duration.seconds(30)
@@ -60,9 +62,11 @@ public final class AppState {
         self.injectedClient = nil
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
+        self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.shared.load()
         favorites = favoritesStore.load()
+        breakTitles = breakTitlesStore.load()
     }
 
     /// Builds a state that talks to `client` and keeps its files under
@@ -77,8 +81,10 @@ public final class AppState {
         self.injectedClient = client
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
+        self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         afkToleranceMinutes = 10
         favorites = favoritesStore.load()
+        breakTitles = breakTitlesStore.load()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -341,15 +347,26 @@ public final class AppState {
         }
     }
 
-    /// Takes `hours` off one entry and puts them on another project and task,
-    /// on the same day. Merges into a matching entry when one already exists.
-    /// A running timer keeps running: on the source if time is left on it,
-    /// otherwise on the destination it just moved to.
-    public func moveTime(_ entry: TimeEntry, hours: Double, projectId: Int64, taskId: Int64) async {
+    /// Takes `hours` off one entry and puts them on another, on the same day.
+    /// `destinationEntryId` picks an exact entry — the only way to reach one
+    /// that shares the source's project and task and differs just by notes;
+    /// without it the move merges into any entry matching the project and
+    /// task, or creates one. A running timer keeps running: on the source if
+    /// time is left on it, otherwise on the destination it just moved to.
+    public func moveTime(
+        _ entry: TimeEntry,
+        hours: Double,
+        projectId: Int64,
+        taskId: Int64,
+        destinationEntryId: Int64? = nil
+    ) async {
         var source = currentVersion(of: entry)
-        guard projectId != source.project.id || taskId != source.task.id,
-              hours > 0, liveHours(for: source) > 0
-        else { return }
+        guard hours > 0, liveHours(for: source) > 0 else { return }
+        if let destinationEntryId {
+            guard destinationEntryId != source.id else { return }
+        } else {
+            guard projectId != source.project.id || taskId != source.task.id else { return }
+        }
         let wasRunning = source.isRunning
 
         await perform { api in
@@ -362,8 +379,10 @@ public final class AppState {
             }
             guard let plan = TimeMove.plan(sourceHours: source.hours, requested: hours) else { return }
             let destination = entries(onDate: source.spentDate).first {
-                $0.project.id == projectId && $0.task.id == taskId
+                if let destinationEntryId { return $0.id == destinationEntryId }
+                return $0.project.id == projectId && $0.task.id == taskId
             }
+            let landedOn: TimeEntry
             if let destination {
                 let updated = try await api.updateHours(
                     entryId: destination.id,
@@ -371,6 +390,7 @@ public final class AppState {
                 )
                 logEdit(updated)
                 apply(updated)
+                landedOn = updated
             } else {
                 let created = try await api.createEntry(
                     projectId: projectId,
@@ -380,6 +400,7 @@ public final class AppState {
                     notes: source.notes
                 )
                 apply(created)
+                landedOn = created
             }
 
             if plan.emptiesSource {
@@ -389,12 +410,28 @@ public final class AppState {
             }
 
             if wasRunning {
-                await startTimer(
-                    projectId: plan.emptiesSource ? projectId : source.project.id,
-                    taskId: plan.emptiesSource ? taskId : source.task.id
-                )
+                await restartTimer(on: plan.emptiesSource ? landedOn : source)
             }
             await sync()
+        }
+    }
+
+    /// Picks a stopped entry's timer back up, keeping its notes — unlike
+    /// `startTimer`, which matches on empty notes and would leave a noted
+    /// entry behind for a fresh unnamed copy.
+    private func restartTimer(on entry: TimeEntry) async {
+        await perform { api in
+            let restarted = try await api.restart(entryId: entry.id)
+            eventLog.append(
+                TimerEvent(
+                    entryId: restarted.id,
+                    action: .start,
+                    timestamp: .now,
+                    projectId: restarted.project.id
+                ),
+                day: restarted.spentDate
+            )
+            apply(restarted)
         }
     }
 
@@ -474,6 +511,21 @@ public final class AppState {
         await perform { api in
             projectAssignments = try await api.projectAssignments()
         }
+    }
+
+    public func breakTitle(forBreakId id: String) -> String? {
+        breakTitles[id]
+    }
+
+    /// Names a break on the timeline. A blank title takes the name away.
+    public func setBreakTitle(_ title: String, forBreakId id: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            breakTitles.removeValue(forKey: id)
+        } else {
+            breakTitles[id] = trimmed
+        }
+        breakTitlesStore.save(breakTitles)
     }
 
     public func addFavorite(_ favorite: Favorite) {

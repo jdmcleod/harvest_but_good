@@ -15,6 +15,8 @@ struct DayTimelineView: View {
     @State private var markerY: CGFloat = 0
     @State private var hasAppliedDefaultView = false
     @State private var showTimelineInfo = false
+    @State private var editingBreakId: String?
+    @State private var breakTitleDraft = ""
 
     private let scale = DayScale()
     private var startHour: Int { scale.startHour }
@@ -332,6 +334,7 @@ struct DayTimelineView: View {
         let bottom = yPosition(for: breakBlock.end, height: height)
         let blockHeight = max(bottom - top, 3)
         let blockWidth = width - labelWidth - 22
+        let title = state.breakTitle(forBreakId: breakBlock.id)
 
         RoundedRectangle(cornerRadius: 4)
             .fill(Color.secondary.opacity(0.08))
@@ -341,7 +344,7 @@ struct DayTimelineView: View {
             )
             .overlay {
                 if blockHeight >= 16 {
-                    Text(breakBlock.label)
+                    Text(title.map { "\($0) · \(breakBlock.label)" } ?? breakBlock.label)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -350,7 +353,44 @@ struct DayTimelineView: View {
             }
             .frame(width: blockWidth, height: blockHeight)
             .position(x: labelWidth + 12 + blockWidth / 2, y: top + blockHeight / 2)
-            .help(breakBlock.label)
+            .help(title.map { "\($0) · \(breakBlock.label)" } ?? breakBlock.label)
+            .pointingCursor()
+            .onTapGesture {
+                breakTitleDraft = title ?? ""
+                editingBreakId = breakBlock.id
+            }
+            .popover(isPresented: breakEditorShown(for: breakBlock), arrowEdge: .trailing) {
+                breakTitleEditor(breakBlock)
+            }
+    }
+
+    /// Open reads as which break is being edited; closing saves the draft, so
+    /// clicking away commits the same as pressing return.
+    private func breakEditorShown(for breakBlock: TimelineBreak) -> Binding<Bool> {
+        Binding(
+            get: { editingBreakId == breakBlock.id },
+            set: { open in
+                guard !open, editingBreakId == breakBlock.id else { return }
+                state.setBreakTitle(breakTitleDraft, forBreakId: breakBlock.id)
+                editingBreakId = nil
+            }
+        )
+    }
+
+    private func breakTitleEditor(_ breakBlock: TimelineBreak) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(breakBlock.label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("Name this break", text: $breakTitleDraft)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 200)
+                .onSubmit {
+                    state.setBreakTitle(breakTitleDraft, forBreakId: breakBlock.id)
+                    editingBreakId = nil
+                }
+        }
+        .padding(12)
     }
 
     @ViewBuilder

@@ -314,6 +314,46 @@ private func runMoveTimeStateTests() async {
         }
     }
 
+    await test("naming a destination entry lands on it, even sharing the source's project and task") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 2, project: 10, task: 100, notes: "rates stuff"),
+                entry(id: 2, day: today, hours: 1, project: 10, task: 100, notes: "meeting"),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.moveTime(
+                state.entry(withId: 1)!,
+                hours: 0.5,
+                projectId: 10,
+                taskId: 100,
+                destinationEntryId: 2
+            )
+
+            expect(fake.entry(2)?.hours == 1.5, "the named entry should absorb the time")
+            expect(fake.entry(1)?.hours == 1.5, "the source should keep the rest")
+            expect(fake.entries.count == 2, "no third entry should appear")
+        }
+    }
+
+    await test("a partial move restarts the source entry itself, not an unnamed copy") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 2, project: 10, task: 100, running: true, notes: "rates stuff"),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+
+            expect(fake.calls.contains("restart(1)"), "the source should pick its own timer back up")
+            expect(fake.entries.count == 2, "only the destination should be new, got \(fake.entries.count)")
+            expect(fake.runningEntry?.id == 1, "the source should be the one running")
+            expect(fake.entry(1)?.notes == "rates stuff", "its notes should survive")
+        }
+    }
+
     await test("moving the whole entry deletes the source") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
@@ -704,6 +744,44 @@ func runProjectBudgetTests() async {
             over.remainingDescription == "2h over the 40h budget",
             "got \(over.remainingDescription ?? "nil")"
         )
+    }
+}
+
+@Test("Break titles")
+@MainActor
+func runBreakTitleTests() async {
+    await test("a break's title survives a restart") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setBreakTitle("Lunch", forBreakId: "break-123")
+            expect(state.breakTitle(forBreakId: "break-123") == "Lunch", "the title should be there")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(
+                reopened.breakTitle(forBreakId: "break-123") == "Lunch",
+                "it should be read back from disk"
+            )
+        }
+    }
+
+    await test("a blank title takes the name away") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setBreakTitle("Lunch", forBreakId: "break-123")
+            state.setBreakTitle("   ", forBreakId: "break-123")
+            expect(state.breakTitle(forBreakId: "break-123") == nil, "the title should be gone")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.breakTitle(forBreakId: "break-123") == nil, "and stay gone on disk")
+        }
+    }
+
+    await test("a title is trimmed before it is kept") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setBreakTitle("  Walk the dog  ", forBreakId: "break-9")
+            expect(state.breakTitle(forBreakId: "break-9") == "Walk the dog", "whitespace should go")
+        }
     }
 }
 
