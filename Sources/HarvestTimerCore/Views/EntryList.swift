@@ -114,7 +114,7 @@ private struct EntryCard: View {
     /// What the field opened showing. A running entry's hours climb while the
     /// field is open, so a commit measures against this rather than against
     /// the entry: opening the editor and closing it unchanged must not rewind
-    /// the timer.
+    /// the timer, and "+15" adds to the number that was on screen.
     @State private var hoursSeed = 0.0
     @FocusState private var notesFocused: Bool
     @FocusState private var hoursFocused: Bool
@@ -178,7 +178,7 @@ private struct EntryCard: View {
                                 .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
                                 .onTapGesture { beginHoursEdit() }
                                 .pointingCursor()
-                                .help("Click to edit duration")
+                                .help("Click to edit duration — 90, 1:30, 2.5, or +15 / -15 to adjust")
                         }
                         if startCount > 0 {
                             Text("\(startCount) start\(startCount == 1 ? "" : "s")")
@@ -318,7 +318,7 @@ private struct EntryCard: View {
     private func commitHours() {
         guard editingHours else { return }
         editingHours = false
-        guard let hours = Hours.parse(hoursText),
+        guard let hours = Hours.parse(hoursText, relativeTo: hoursSeed),
               abs(hours - hoursSeed) > 0.0001 else { return }
         Task { await state.updateHours(entry, hours: hours) }
     }
