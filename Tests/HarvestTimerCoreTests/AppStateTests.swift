@@ -573,6 +573,52 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("removing away time splits the run in two with a break between") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let startedAt = Date.now.addingTimeInterval(-90 * 60)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: today,
+                    hours: 1.5,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            await state.sync()
+
+            let awayStart = Date.now.addingTimeInterval(-60 * 60)
+            let awayEnd = Date.now.addingTimeInterval(-10 * 60)
+            state.afkPrompt = AFKPrompt(entryId: 1, start: awayStart, end: awayEnd)
+            await state.removeAFKTime()
+
+            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            expect(blocks.count == 2, "the run should be cut in two, got \(blocks.count)")
+            expect(
+                blocks.first.map { abs($0.end.timeIntervalSince(awayStart)) < 1 } == true,
+                "the first block should end when the desk emptied"
+            )
+            expect(
+                blocks.last.map { abs($0.start.timeIntervalSince(awayEnd)) < 1 } == true,
+                "the second block should start on the way back"
+            )
+            let breaks = TimelineBuilder.breaks(between: blocks)
+            expect(breaks.count == 1, "the gap should draw as a break, got \(breaks.count)")
+            expect(
+                !state.modifiedEntryIds(forDay: .now).contains(1),
+                "the entry's blocks still add up, so it should not be striped"
+            )
+            expect(
+                state.entry(withId: 1).map { abs($0.hours - (1.5 - 50.0 / 60)) < 0.01 } == true,
+                "Harvest should lose the fifty minutes away"
+            )
+        }
+    }
+
     await test("the first open of the day lands on today") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
