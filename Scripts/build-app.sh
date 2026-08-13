@@ -61,6 +61,8 @@ cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>RoleModel Software</string>
 </dict>
 </plist>
 PLIST
@@ -99,13 +101,30 @@ codesign --force --sign "$SIGN_IDENTITY" "$STAGED_APP"
 # whatever the old one had and the new one doesn't, and a stale file inside a
 # signed bundle breaks the signature. Check what is there before removing it,
 # since this deletes a directory in $INSTALL_DIR.
-BUNDLE_ID="$(
-    defaults read "$STAGED_APP/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || true
-)"
+# Read the identifier off the staged plist rather than repeating it here, but
+# treat an unreadable one as fatal: this guards an rm -rf, and a guard that ends
+# up comparing two empty strings waves everything through. plutil rather than
+# defaults, which wants a domain and quietly fails on a relative path like this
+# one -- that failure left BUNDLE_ID empty, so the check refused to replace the
+# real app and deleted anything whose plist it couldn't read.
+BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$STAGED_APP/Contents/Info.plist")"
+if [ -z "$BUNDLE_ID" ]; then
+    echo "Couldn't read CFBundleIdentifier from $STAGED_APP/Contents/Info.plist." >&2
+    echo "Refusing to touch $INSTALLED_APP without knowing what this build is." >&2
+    exit 1
+fi
+
 if [ -e "$INSTALLED_APP" ]; then
-    installed_id="$(
-        defaults read "$INSTALLED_APP/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || true
-    )"
+    # Unreadable here is not fatal, unlike above: it means whatever is sitting
+    # there is not ours, which the refusal below is for. Assign only on success,
+    # since plutil reports "no such file" on stdout and that would otherwise be
+    # captured as the identifier and printed as if it were one.
+    installed_id=""
+    if id_read="$(
+        plutil -extract CFBundleIdentifier raw "$INSTALLED_APP/Contents/Info.plist" 2>/dev/null
+    )"; then
+        installed_id="$id_read"
+    fi
     if [ "$installed_id" != "$BUNDLE_ID" ]; then
         echo "Refusing to replace $INSTALLED_APP:" >&2
         echo "  expected $BUNDLE_ID, found \"${installed_id:-nothing readable}\"." >&2
