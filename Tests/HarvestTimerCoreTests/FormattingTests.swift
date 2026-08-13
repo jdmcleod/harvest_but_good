@@ -29,6 +29,21 @@ func runFormattingTests() {
         expect(Hours.formatted(24) == "24:00", "a full day should read as 24:00")
     }
 
+    test("rounding to the minute matches what gets written") {
+        // The duration editor seeds its field from this, so a value that has
+        // been through it has to survive being written and read back exactly.
+        for seconds in stride(from: 0, through: 3600, by: 7) {
+            let hours = Double(seconds) / 3600
+            let rounded = Hours.toNearestMinute(hours)
+            expect(
+                Hours.parse(Hours.formatted(rounded)) == rounded,
+                "\(Hours.formatted(rounded)) should read back as the number it was written from"
+            )
+        }
+        expect(Hours.toNearestMinute(1 + 1.0 / 180) == 1, "20 seconds should round down")
+        expect(Hours.toNearestMinute(1 + 1.0 / 120) == 1 + 1.0 / 60, "30 seconds should round up")
+    }
+
     test("writing hours rounds to the nearest minute") {
         // 1/60 of an hour is a minute, so a third of that is 20 seconds.
         expect(Hours.formatted(1 + 1.0 / 180) == "1:00", "20 seconds should round down")

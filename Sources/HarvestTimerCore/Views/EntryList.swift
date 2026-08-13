@@ -111,6 +111,11 @@ private struct EntryCard: View {
     @State private var movingTime = false
     @State private var editingHours = false
     @State private var hoursText = ""
+    /// What the field opened showing. A running entry's hours climb while the
+    /// field is open, so a commit measures against this rather than against
+    /// the entry: opening the editor and closing it unchanged must not rewind
+    /// the timer.
+    @State private var hoursSeed = 0.0
     @FocusState private var notesFocused: Bool
     @FocusState private var hoursFocused: Bool
 
@@ -172,8 +177,8 @@ private struct EntryCard: View {
                                 .monospacedDigit()
                                 .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
                                 .onTapGesture { beginHoursEdit() }
-                                .pointingCursor(!entry.isRunning)
-                                .help(entry.isRunning ? "Stop the timer to edit the duration" : "Click to edit duration")
+                                .pointingCursor()
+                                .help("Click to edit duration")
                         }
                         if startCount > 0 {
                             Text("\(startCount) start\(startCount == 1 ? "" : "s")")
@@ -304,8 +309,8 @@ private struct EntryCard: View {
     }
 
     private func beginHoursEdit() {
-        guard !entry.isRunning else { return }
-        hoursText = Hours.formatted(entry.hours)
+        hoursSeed = Hours.toNearestMinute(state.liveHours(for: entry))
+        hoursText = Hours.formatted(hoursSeed)
         editingHours = true
         DispatchQueue.main.async { hoursFocused = true }
     }
@@ -314,7 +319,7 @@ private struct EntryCard: View {
         guard editingHours else { return }
         editingHours = false
         guard let hours = Hours.parse(hoursText),
-              abs(hours - entry.hours) > 0.0001 else { return }
+              abs(hours - hoursSeed) > 0.0001 else { return }
         Task { await state.updateHours(entry, hours: hours) }
     }
 

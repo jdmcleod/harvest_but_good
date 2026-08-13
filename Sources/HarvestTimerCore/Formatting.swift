@@ -5,8 +5,19 @@ import Foundation
 public enum Hours {
     /// 1.5 hours as "1:30".
     public static func formatted(_ hours: Double) -> String {
-        let totalMinutes = Int((hours * 60).rounded())
+        let totalMinutes = minutes(in: hours)
         return String(format: "%d:%02d", totalMinutes / 60, totalMinutes % 60)
+    }
+
+    /// What `formatted` shows, as a number. Reading a duration back off the
+    /// screen loses anything finer than the minute, so a value that has been
+    /// through here survives the round trip unchanged.
+    public static func toNearestMinute(_ hours: Double) -> Double {
+        Double(minutes(in: hours)) / 60
+    }
+
+    private static func minutes(in hours: Double) -> Int {
+        Int((hours * 60).rounded())
     }
 
     /// Reads "1:30", ":20", or "2.25". Nothing negative, nothing over a day,
