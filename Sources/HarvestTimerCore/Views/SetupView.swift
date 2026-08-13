@@ -127,6 +127,8 @@ struct SetupView: View {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color(nsColor: .controlBackgroundColor))
                     )
+
+                    UpdatesCard()
                 }
 
                 HStack {
