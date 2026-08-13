@@ -53,9 +53,8 @@ func runKeychainTests() {
         try keychain.save(Keychain.Credentials(token: "a-token", accountId: "12345"))
         keychain.clear()
 
-        expect(keychain.load() == nil, "signing out should clear both halves")
-        expect(keychain.read(account: "token") == nil, "the token should be gone")
-        expect(keychain.read(account: "accountId") == nil, "the account should be gone too")
+        expect(keychain.load() == nil, "signing out should clear the credentials")
+        expect(keychain.read(account: Keychain.account) == nil, "the item should be gone")
     }
 
     test("clearing an empty keychain is not a failure") {
@@ -65,7 +64,7 @@ func runKeychainTests() {
         expect(keychain.load() == nil, "clearing twice should be as quiet as once")
     }
 
-    test("half the credentials read as none at all") {
+    test("half the old credentials read as none at all") {
         let keychain = scratchKeychain()
         defer { keychain.clear() }
 
@@ -76,6 +75,54 @@ func runKeychainTests() {
         keychain.delete(account: "token")
         try keychain.write(account: "accountId", value: "12345")
         expect(keychain.load() == nil, "nor is an account with no token")
+    }
+
+    test("a garbled item reads as nothing rather than crashing") {
+        let keychain = scratchKeychain()
+        defer { keychain.clear() }
+
+        try keychain.write(account: Keychain.account, value: "not json")
+        expect(keychain.load() == nil, "unreadable credentials are no credentials")
+        expect(keychain.read(account: Keychain.account) == nil, "and it should not be left to prompt for")
+    }
+
+    test("credentials saved by an older version still load") {
+        let keychain = scratchKeychain()
+        defer { keychain.clear() }
+
+        try keychain.write(account: "token", value: "a-token")
+        try keychain.write(account: "accountId", value: "12345")
+        expect(
+            keychain.load() == Keychain.Credentials(token: "a-token", accountId: "12345"),
+            "the old pair should read back as credentials"
+        )
+    }
+
+    test("loading an older version's credentials moves them into one item") {
+        let keychain = scratchKeychain()
+        defer { keychain.clear() }
+
+        try keychain.write(account: "token", value: "a-token")
+        try keychain.write(account: "accountId", value: "12345")
+        _ = keychain.load()
+
+        expect(keychain.read(account: Keychain.account) != nil, "the pair should be rewritten as one")
+        expect(keychain.read(account: "token") == nil, "the old token should be cleaned up")
+        expect(keychain.read(account: "accountId") == nil, "and the old account with it")
+        expect(keychain.load()?.token == "a-token", "and it should still read back after the move")
+    }
+
+    test("saving cleans up an older version's items") {
+        let keychain = scratchKeychain()
+        defer { keychain.clear() }
+
+        try keychain.write(account: "token", value: "stale")
+        try keychain.write(account: "accountId", value: "stale")
+        try keychain.save(Keychain.Credentials(token: "fresh", accountId: "1"))
+
+        expect(keychain.read(account: "token") == nil, "no stale token should be left to prompt for")
+        expect(keychain.read(account: "accountId") == nil, "nor a stale account")
+        expect(keychain.load()?.token == "fresh", "and the new credentials should win")
     }
 
     test("two services do not see each other") {
