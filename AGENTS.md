@@ -72,4 +72,4 @@ timestamps off the shared `base` date; use `day("2025-08-06")` for fixed dates. 
 carries on after a failure, so the rest of a suite still reports.
 
 ## Comments
-Comments explain *why* a thing is the way it is, not what the code does; Limit to 80 characters unless there's a really good justification.
+Comments explain *why* a thing is the way it is, not what the code does; limit to 80 characters unless there's a really good justification.

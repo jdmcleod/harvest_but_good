@@ -24,9 +24,13 @@ struct Keychain {
     /// Both halves or nothing: a token without an account is no use, and
     /// leaving one behind would look like being signed in.
     func load() -> Credentials? {
-        if let json = read(account: Self.account),
-           let credentials = try? JSONDecoder().decode(Credentials.self, from: Data(json.utf8)) {
-            return credentials
+        if let json = read(account: Self.account) {
+            if let credentials = try? JSONDecoder().decode(Credentials.self, from: Data(json.utf8)) {
+                return credentials
+            }
+            // Nothing will ever decode it, and leaving it would cost a prompt
+            // on every launch for a read that cannot succeed.
+            delete(account: Self.account)
         }
         return migrateLegacyCredentials()
     }

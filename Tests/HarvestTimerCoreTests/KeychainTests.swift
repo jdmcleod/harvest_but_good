@@ -83,6 +83,7 @@ func runKeychainTests() {
 
         try keychain.write(account: Keychain.account, value: "not json")
         expect(keychain.load() == nil, "unreadable credentials are no credentials")
+        expect(keychain.read(account: Keychain.account) == nil, "and it should not be left to prompt for")
     }
 
     test("credentials saved by an older version still load") {
@@ -120,6 +121,7 @@ func runKeychainTests() {
         try keychain.save(Keychain.Credentials(token: "fresh", accountId: "1"))
 
         expect(keychain.read(account: "token") == nil, "no stale token should be left to prompt for")
+        expect(keychain.read(account: "accountId") == nil, "nor a stale account")
         expect(keychain.load()?.token == "fresh", "and the new credentials should win")
     }
 
