@@ -478,10 +478,25 @@ public final class AppState {
         let hours = max(0, liveHours(for: entry) - prompt.duration / 3600)
         await perform { api in
             let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            logEdit(updated)
+            logAFKBreak(prompt, on: updated)
             apply(updated)
             await sync()
         }
+    }
+
+    /// Cuts the away time out of the entry's run on the timeline rather than
+    /// marking it edited: the timer stopped when the desk emptied and picked up
+    /// again on the way back, so the log says exactly that and the gap draws as
+    /// a break. The hours still match the blocks, so no stripe is warranted.
+    private func logAFKBreak(_ prompt: AFKPrompt, on entry: TimeEntry) {
+        eventLog.append(
+            TimerEvent(entryId: entry.id, action: .stop, timestamp: prompt.start, projectId: entry.project.id),
+            day: entry.spentDate
+        )
+        eventLog.append(
+            TimerEvent(entryId: entry.id, action: .start, timestamp: prompt.end, projectId: entry.project.id),
+            day: entry.spentDate
+        )
     }
 
     private func checkAFK() {
