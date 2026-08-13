@@ -71,11 +71,13 @@ func runUpdateCheckerTests() async {
         expect(server.callCount == 0, "there is nothing to ask about, so nothing should be asked")
     }
 
-    await test("a commit GitHub has never seen says so") {
+    // A commit pushed seconds ago 404s too, because the API trails the push, so
+    // the message has to leave room for a retry rather than blame the user.
+    await test("a commit GitHub has not seen says so, and suggests trying again") {
         let (checker, _) = checker([.status(404, body: "{}")])
         await expectFailure(
             "unknownCommit",
-            containing: "never have been pushed",
+            containing: "try again in a moment",
             try await checker.status(of: stampedBuild)
         )
     }

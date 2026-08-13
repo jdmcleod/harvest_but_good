@@ -26,7 +26,9 @@ enum UpdateCheckError: LocalizedError {
         case .notStamped:
             return "This build carries no commit stamp, so there is nothing to compare. Rebuild with Scripts/build-app.sh."
         case .unknownCommit:
-            return "GitHub doesn't know the commit this was built from. It may never have been pushed."
+            // Also what a commit pushed seconds ago looks like: the API trails
+            // the push by a moment, so this is worth retrying before believing.
+            return "GitHub doesn't know the commit this was built from yet. If it was just pushed, try again in a moment."
         case .rateLimited:
             return "GitHub is rate limiting this address. Try again in an hour."
         case .http(let code, let body):
