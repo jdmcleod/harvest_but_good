@@ -43,9 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let rootHosting = NSHostingController(rootView: RootView().environment(state))
         window = NSWindow(contentViewController: rootHosting)
         window.title = "HarvestButGood"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.backgroundColor = .harvest
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.addTitlebarAccessoryViewController(makeTodayAccessory())
@@ -77,12 +78,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func toggleWindow() {
-        if window.isVisible, window.isKeyWindow {
+        if window.isVisible, window.isKeyWindow, isOnClickedScreen {
             window.orderOut(nil)
             return
         }
         Task { await state.sync() }
+        // A click on another display's menu bar means the user wants the
+        // window there, not wherever it was last left.
+        if !isOnClickedScreen { hasRestoredFrame = false }
         showWindow()
+    }
+
+    /// The status item's window lives on whichever display's menu bar took
+    /// the click, so its screen is the one the user is looking at.
+    private var isOnClickedScreen: Bool {
+        guard let clicked = statusItem.button?.window?.screen else { return true }
+        return window.screen == clicked
     }
 
     private func showWindow() {
