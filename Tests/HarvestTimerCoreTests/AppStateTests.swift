@@ -198,6 +198,40 @@ func runAppStateTests() async {
         }
     }
 
+    await test("the menu bar button picks up the timer it last put down") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100),
+                entry(id: 2, day: today, hours: 2, project: 11, task: 110),
+                entry(id: 3, day: today, hours: 3, project: 12, task: 120),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.toggle(state.entry(withId: 3)!)
+            await state.toggle(state.entry(withId: 1)!)
+            await state.toggleCurrentTimer()
+            expect(state.runningEntry == nil, "the button should stop what is running")
+
+            await state.toggleCurrentTimer()
+            expect(state.runningEntry?.id == 1, "expected entry 1 back, got \(state.runningEntry?.id ?? -1)")
+        }
+    }
+
+    await test("the menu bar button falls back to the list for a day it did not run") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100),
+                entry(id: 2, day: today, hours: 2, project: 11, task: 110),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.toggleCurrentTimer()
+            expect(state.runningEntry?.id == 2, "expected the last of the list, got \(state.runningEntry?.id ?? -1)")
+        }
+    }
+
     await test("editing an entry's duration marks it modified for the timeline") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)

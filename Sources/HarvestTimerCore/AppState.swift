@@ -323,9 +323,26 @@ public final class AppState {
     public func toggleCurrentTimer() async {
         if let running = runningEntry {
             await toggle(running)
-        } else if let recent = entries(forDay: .now).last {
+        } else if let recent = lastStoppedEntry ?? entries(forDay: .now).last {
             await toggle(recent)
         }
+    }
+
+    /// What the clock was last on, which is rarely the last row of the list:
+    /// the list keeps Harvest's order, the event log keeps the day's. Skips
+    /// entries that have since gone, and falls back to the list for a day
+    /// whose timers all ran somewhere else.
+    private var lastStoppedEntry: TimeEntry? {
+        let today = entries(forDay: .now)
+        // The log keeps whole seconds, so stopping one timer to start another
+        // writes two events on the same second. The later line breaks the tie.
+        let stops = eventLog.events(forDay: Day(.now))
+            .enumerated()
+            .filter { $0.element.action == .stop }
+            .sorted { ($0.element.timestamp, $0.offset) > ($1.element.timestamp, $1.offset) }
+        return stops.lazy
+            .compactMap { stop in today.first { $0.id == stop.element.entryId } }
+            .first
     }
 
     public func saveNotes(_ entry: TimeEntry, notes: String) async {
