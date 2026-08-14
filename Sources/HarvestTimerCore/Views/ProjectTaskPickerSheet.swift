@@ -17,6 +17,7 @@ struct ProjectTaskPickerSheet: View {
     @State private var selectedAssignmentId: Int64?
     @State private var selectedTaskId: Int64?
     @State private var notes = ""
+    @State private var highlightedAssignmentId: Int64?
     @FocusState private var searchFocused: Bool
     @FocusState private var notesFocused: Bool
 
@@ -56,6 +57,7 @@ struct ProjectTaskPickerSheet: View {
                 Button("Cancel") { dismiss() }
                 Button(actionLabel) { confirm() }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(selectedAssignment == nil || selectedTaskId == nil)
             }
         }
@@ -73,24 +75,31 @@ struct ProjectTaskPickerSheet: View {
                 .pickerSearchFieldStyle()
                 .focused($searchFocused)
                 .onSubmit {
-                    if let first = filteredAssignments.first { select(first) }
+                    if let match = highlightedMatch ?? filteredAssignments.first { select(match) }
                 }
+                .onKeyPress(.upArrow) { moveHighlight(by: -1) }
+                .onKeyPress(.downArrow) { moveHighlight(by: 1) }
                 .onAppear { searchFocused = true }
 
-            PickerListBox {
-                ForEach(filteredAssignments, id: \.assignment.id) { match in
-                    PickerRow(
-                        title: match.assignment.project.name,
-                        subtitle: match.subtitle,
-                        isSelected: false
-                    ) {
-                        select(match)
+            ScrollViewReader { list in
+                PickerListBox {
+                    ForEach(filteredAssignments, id: \.assignment.id) { match in
+                        PickerRow(
+                            title: match.assignment.project.name,
+                            subtitle: match.subtitle,
+                            isSelected: match.assignment.id == highlightedAssignmentId
+                        ) {
+                            select(match)
+                        }
+                    }
+                    if filteredAssignments.isEmpty {
+                        Text("No projects match “\(search)”")
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 12)
                     }
                 }
-                if filteredAssignments.isEmpty {
-                    Text("No projects match “\(search)”")
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 12)
+                .onChange(of: highlightedAssignmentId) { _, id in
+                    if let id { list.scrollTo(id) }
                 }
             }
         }
@@ -121,6 +130,19 @@ struct ProjectTaskPickerSheet: View {
         else { return }
         selectedAssignmentId = assignment.id
         selectedTaskId = initialTaskId
+    }
+
+    private var highlightedMatch: ProjectSearch.Match? {
+        filteredAssignments.first { $0.assignment.id == highlightedAssignmentId }
+    }
+
+    private func moveHighlight(by step: Int) -> KeyPress.Result {
+        highlightedAssignmentId = ListCursor.moved(
+            from: highlightedAssignmentId,
+            by: step,
+            in: filteredAssignments.map(\.assignment.id)
+        )
+        return .handled
     }
 
     private func select(_ match: ProjectSearch.Match) {

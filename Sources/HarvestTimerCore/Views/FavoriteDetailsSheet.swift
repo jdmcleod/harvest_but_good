@@ -50,6 +50,7 @@ struct FavoriteDetailsSheet: View {
                 Button("Cancel") { dismiss() }
                 Button(isNew ? "Add Favorite" : "Save") { save() }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
