@@ -198,6 +198,40 @@ func runAppStateTests() async {
         }
     }
 
+    await test("the menu bar button picks up the timer it last put down") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100),
+                entry(id: 2, day: today, hours: 2, project: 11, task: 110),
+                entry(id: 3, day: today, hours: 3, project: 12, task: 120),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.toggle(state.entry(withId: 3)!)
+            await state.toggle(state.entry(withId: 1)!)
+            await state.toggleCurrentTimer()
+            expect(state.runningEntry == nil, "the button should stop what is running")
+
+            await state.toggleCurrentTimer()
+            expect(state.runningEntry?.id == 1, "expected entry 1 back, got \(state.runningEntry?.id ?? -1)")
+        }
+    }
+
+    await test("the menu bar button falls back to the list for a day it did not run") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100),
+                entry(id: 2, day: today, hours: 2, project: 11, task: 110),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.toggleCurrentTimer()
+            expect(state.runningEntry?.id == 2, "expected the last of the list, got \(state.runningEntry?.id ?? -1)")
+        }
+    }
+
     await test("editing an entry's duration marks it modified for the timeline") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
@@ -615,6 +649,147 @@ func runAFKLoopTests() async {
             expect(
                 state.entry(withId: 1).map { abs($0.hours - (1.5 - 50.0 / 60)) < 0.01 } == true,
                 "Harvest should lose the fifty minutes away"
+            )
+        }
+    }
+
+    await test("a night the machine slept through counts as the whole night") {
+        try await withTemporaryDirectory { directory in
+            // The night of 2026-08-10: timer on at 3:53pm, last keystroke at
+            // 4:40pm, lid open at 8:05am. The idle clock reported the last
+            // maintenance wake instead, which cost all but 55 minutes.
+            let night = 15.0 * 3600 + 25 * 60
+            let startedAt = Date.now.addingTimeInterval(-(night + 46 * 60))
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(startedAt),
+                    hours: 16.33,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { night - 55 * 60 }
+            )
+            await state.sync()
+
+            state.lastActivityAt = Date.now.addingTimeInterval(-night)
+            // The tick before this one ran before the lid closed, so this one
+            // arrives a night late.
+            state.now = Date.now.addingTimeInterval(-night)
+            state.afkTick()
+
+            expect(
+                state.afkPrompt.map { $0.duration >= night - 5 } == true,
+                "the whole night should count as away, got \(state.afkPrompt?.duration ?? -1)"
+            )
+        }
+    }
+
+    await test("a tick that came late leaves the last activity alone") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest(entries: [])
+            // Nothing running, so no prompt — the reading still must not be
+            // written down, or the gap is gone by the time somebody is back.
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            await state.sync()
+
+            let lastInput = Date.now.addingTimeInterval(-15 * 3600)
+            state.lastActivityAt = lastInput
+            state.now = Date.now.addingTimeInterval(-14 * 3600)
+            state.afkTick()
+            expect(
+                state.lastActivityAt == lastInput,
+                "a maintenance wake should not pass for somebody at the keyboard"
+            )
+
+            state.afkTick()
+            expect(
+                state.lastActivityAt > lastInput,
+                "a tick on its cadence should move the baseline on again"
+            )
+        }
+    }
+
+    await test("the sleep window repairs a baseline a wake had already spoiled") {
+        try await withTemporaryDirectory { directory in
+            // The gap start is already wrong, as a maintenance wake would have
+            // left it. macOS knows when the lid shut, so it can be put right.
+            let night = 15.0 * 3600 + 25 * 60
+            let startedAt = Date.now.addingTimeInterval(-(night + 46 * 60))
+            let lidShut = Date.now.addingTimeInterval(-night)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(startedAt),
+                    hours: 16.33,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let watch = SleepWatch(center: NotificationCenter())
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { 0 },
+                sleepWatch: watch
+            )
+            await state.sync()
+
+            state.lastActivityAt = Date.now.addingTimeInterval(-55 * 60)
+            watch.noteSleep(at: lidShut)
+            watch.noteWake(at: .now)
+            state.afkTick()
+
+            expect(
+                state.afkPrompt.map { $0.duration >= night - 5 } == true,
+                "the sleep window should outrank the spoiled reading, got \(state.afkPrompt?.duration ?? -1)"
+            )
+        }
+    }
+
+    await test("an unanswered prompt grows through a second sleep") {
+        try await withTemporaryDirectory { directory in
+            let startedAt = Date.now.addingTimeInterval(-6 * 3600)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(startedAt),
+                    hours: 6,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let watch = SleepWatch(center: NotificationCenter())
+            let state = AppState(
+                client: fake,
+                storageDirectory: directory,
+                idleSeconds: { 0 },
+                sleepWatch: watch
+            )
+            await state.sync()
+
+            watch.noteSleep(at: Date.now.addingTimeInterval(-3 * 3600))
+            watch.noteWake(at: .now)
+            state.afkTick()
+            let first = state.afkPrompt?.duration ?? 0
+            expect(first >= 3 * 3600 - 5, "the first sleep should raise a prompt, got \(first)")
+
+            watch.noteSleep(at: Date.now.addingTimeInterval(-30))
+            watch.noteWake(at: .now)
+            state.afkTick()
+            expect(
+                state.afkPrompt.map { $0.duration > first } == true,
+                "the wait for an answer should be away time too"
             )
         }
     }

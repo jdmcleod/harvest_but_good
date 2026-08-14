@@ -92,6 +92,36 @@ func runAFKTests() {
         expect(prompt == existing, "an open prompt should not change on its own")
     }
 
+    test("afk prompt grows through a sleep it was not answered before") {
+        let existing = AFKPrompt(entryId: 7, start: base, end: base.addingTimeInterval(600))
+        let prompt = AFKDetector.evaluate(
+            prompt: existing,
+            lastActivity: base.addingTimeInterval(600),
+            currentActivity: base.addingTimeInterval(4200),
+            toleranceSeconds: 300,
+            runningEntryId: 7,
+            runningEntryStartedAt: nil,
+            sleptSinceLastCheck: true
+        )
+        expect(prompt?.start == base, "the gap should still start where it did")
+        expect(prompt?.duration == 4200, "waiting for an answer should not cost the wait")
+        expect(prompt?.id == existing.id, "the open window should be updated, not replaced")
+    }
+
+    test("afk prompt holds still while somebody is at the keyboard") {
+        let existing = AFKPrompt(entryId: 7, start: base, end: base.addingTimeInterval(600))
+        let prompt = AFKDetector.evaluate(
+            prompt: existing,
+            lastActivity: base.addingTimeInterval(600),
+            currentActivity: base.addingTimeInterval(4200),
+            toleranceSeconds: 300,
+            runningEntryId: 7,
+            runningEntryStartedAt: nil,
+            sleptSinceLastCheck: false
+        )
+        expect(prompt == existing, "time spent reading the prompt is time at the desk")
+    }
+
     test("afk prompt survives the timer stopping") {
         let existing = AFKPrompt(entryId: 7, start: base, end: base.addingTimeInterval(600))
         let prompt = AFKDetector.evaluate(
@@ -115,6 +145,28 @@ func runAFKTests() {
             runningEntryStartedAt: base.addingTimeInterval(660)
         )
         expect(prompt == nil, "time away off the clock is not the entry's to give back")
+    }
+
+    test("afk detector believes an idle reading from a tick that came on time") {
+        expect(
+            AFKDetector.trustsIdleReading(sinceLastTick: 10, interval: 10),
+            "a tick on its cadence watched the whole stretch"
+        )
+        expect(
+            AFKDetector.trustsIdleReading(sinceLastTick: 19, interval: 10),
+            "a tick running a little behind is still watching"
+        )
+    }
+
+    test("afk detector distrusts an idle reading from a tick that came late") {
+        expect(
+            !AFKDetector.trustsIdleReading(sinceLastTick: 45, interval: 10),
+            "a tick minutes late sat through a sleep"
+        )
+        expect(
+            !AFKDetector.trustsIdleReading(sinceLastTick: 15 * 3600, interval: 10),
+            "a tick a night late sat through a night"
+        )
     }
 
     test("afk detector counts only the away time the timer was running for") {
