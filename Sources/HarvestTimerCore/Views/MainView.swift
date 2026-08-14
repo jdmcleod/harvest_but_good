@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// Both panes size their header rows to this so the scroll areas beneath
+/// them (and their scroll bars) start at the same height.
+enum PanelHeader {
+    static let height: CGFloat = 40
+}
+
 struct MainView: View {
     @Environment(AppState.self) private var state
     @State private var showingSettings = false

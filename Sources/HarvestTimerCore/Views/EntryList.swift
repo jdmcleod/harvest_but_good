@@ -26,7 +26,7 @@ struct EntryList: View {
                 .help("Start a timer for any project")
             }
             .padding(.horizontal, 10)
-            .padding(.top, 8)
+            .frame(height: PanelHeader.height)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -42,7 +42,7 @@ struct EntryList: View {
                             }
                         }
                     }
-                    .padding(10)
+                    .padding([.horizontal, .bottom], 10)
                     .frame(maxWidth: .infinity, minHeight: 0, alignment: .top)
                 }
                 .onChange(of: state.selectedEntryId) { _, entryId in
