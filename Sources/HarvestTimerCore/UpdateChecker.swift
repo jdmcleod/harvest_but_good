@@ -28,7 +28,9 @@ enum UpdateCheckError: LocalizedError {
         case .unknownCommit:
             // Also what a commit pushed seconds ago looks like: the API trails
             // the push by a moment, so this is worth retrying before believing.
-            return "GitHub doesn't know the commit this was built from yet. If it was just pushed, try again in a moment."
+            // A branch that only exists locally 404s the same way, hence "or
+            // its branch" rather than blaming the commit alone.
+            return "GitHub doesn't know this build's commit or its branch. If it was just pushed, try again in a moment."
         case .rateLimited:
             return "GitHub is rate limiting this address. Try again in an hour."
         case .http(let code, let body):
@@ -43,11 +45,12 @@ enum UpdateCheckError: LocalizedError {
 
 /// Asks GitHub what has landed on the tracked branch since a build was made.
 ///
-/// Reads rather than writes, and never downloads anything: the app cannot
-/// replace itself safely while its Keychain access is pinned to one build's
-/// hash, so the answer here is a sentence and a command to run, not an install.
+/// Reads rather than writes, and never downloads anything: catching up means
+/// rebuilding from the repo, which is `SelfUpdater`'s job, not a download.
 public struct UpdateChecker {
     public static let defaultRepository = "jdmcleod/harvest_but_good"
+    /// Both the fallback for an unstamped build and the mainline every other
+    /// branch is measured against.
     public static let defaultBranch = "main"
 
     let repository: String
@@ -63,6 +66,12 @@ public struct UpdateChecker {
         self.repository = repository
         self.branch = branch
         self.session = session
+    }
+
+    /// Tracks the branch the build was made from, so a staging-branch build
+    /// follows its own branch rather than counting itself forever off main.
+    public init(for build: BuildInfo, session: URLSession = .shared) {
+        self.init(branch: build.branch ?? Self.defaultBranch, session: session)
     }
 
     private static let decoder: JSONDecoder = {
@@ -102,9 +111,28 @@ public struct UpdateChecker {
         URL(string: "https://github.com/\(repository)/compare/\(commit)...\(branch)")
     }
 
-    /// What to run to catch up. The app builds and installs itself in one step,
-    /// so this is the whole of it.
-    public static let updateCommand = "git pull && Scripts/build-app.sh"
+    /// How many commits the mainline holds that the tracked branch has not
+    /// merged, or nil when the tracked branch is the mainline and the question
+    /// answers itself. A separate signal from `status(of:)` because the remedy
+    /// is different: merging main into the branch, not pulling and rebuilding.
+    public func unmergedMainlineCount() async throws -> Int? {
+        guard branch != Self.defaultBranch else { return nil }
+        let comparison = try await compare(base: branch, head: Self.defaultBranch)
+        switch comparison.status {
+        case "identical", "behind":
+            // "behind" means the branch holds everything main does and more.
+            return 0
+        case "ahead", "diverged":
+            return comparison.aheadBy
+        default:
+            throw UpdateCheckError.malformed("unexpected status \"\(comparison.status)\"")
+        }
+    }
+
+    /// Where to read what the mainline has that the tracked branch does not.
+    public func mainlineChangesURL() -> URL? {
+        URL(string: "https://github.com/\(repository)/compare/\(branch)...\(Self.defaultBranch)")
+    }
 
     private func compare(base: String, head: String) async throws -> Comparison {
         guard let url = URL(
