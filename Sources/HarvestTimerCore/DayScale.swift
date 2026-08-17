@@ -9,7 +9,7 @@ public struct DayScale: Equatable {
     public let startHour: Int
     public let endHour: Int
 
-    public init(startHour: Int = 7, endHour: Int = 19) {
+    public init(startHour: Int = 6, endHour: Int = 24) {
         self.startHour = startHour
         self.endHour = endHour
     }
@@ -24,10 +24,11 @@ public struct DayScale: Equatable {
         return min(max(fraction, 0), 1) * height
     }
 
-    /// The label beside an hour line: "7 AM", "12 PM", "7 PM".
+    /// The label beside an hour line: "7 AM", "12 PM", "7 PM". Hour 24 is the
+    /// midnight that closes the day, so it reads "12 AM" like hour 0 does.
     public func hourLabel(_ hour: Int) -> String {
         let display = hour % 12 == 0 ? 12 : hour % 12
-        return "\(display) \(hour < 12 ? "AM" : "PM")"
+        return "\(display) \(hour % 24 < 12 ? "AM" : "PM")"
     }
 
     /// The label beside a quarter-hour line, counted from the first hour on
