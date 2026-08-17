@@ -55,7 +55,7 @@ struct DayTimelineView: View {
                 zoomControls
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .frame(height: PanelHeader.height)
             Divider()
             GeometryReader { geometry in
                 let viewportHeight = geometry.size.height - 16
