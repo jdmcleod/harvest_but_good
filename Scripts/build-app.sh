@@ -18,6 +18,16 @@ INSTALLED_APP="${INSTALL_DIR}/${APP_NAME}.app"
 # was built. Tracked files only: an untracked scratch file changes nothing that
 # ends up in the binary, and calling that dirty would cry wolf.
 GIT_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+# The branch too, so a build from a staging branch checks against that branch
+# rather than reporting itself forever off main. A detached HEAD answers
+# "HEAD", which names no branch, so stamp nothing and let main be the fallback.
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ "$GIT_BRANCH" = "HEAD" ]; then
+    GIT_BRANCH=""
+fi
+# And where the repo lives, so the app can run this script to update itself.
+# A repo that has moved by then just means no Update Now button.
+GIT_REPO_PATH="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     GIT_DIRTY="true"
 else
@@ -33,7 +43,8 @@ cp "$BUILD_DIR/$PRODUCT_NAME" "$STAGED_APP/Contents/MacOS/$APP_NAME"
 cp Resources/AppIcon.icns "$STAGED_APP/Contents/Resources/AppIcon.icns"
 
 # Unquoted, so the git stamps below expand. Nothing else in here needs
-# escaping: the plist carries no dollar signs, backticks, or backslashes.
+# escaping: the plist carries no dollar signs, backticks, or backslashes,
+# unless the repo sits at a path using them, which is asking for it anyway.
 cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -53,8 +64,12 @@ cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>GitBranch</key>
+    <string>${GIT_BRANCH}</string>
     <key>GitCommit</key>
     <string>${GIT_COMMIT}</string>
+    <key>GitRepoPath</key>
+    <string>${GIT_REPO_PATH}</string>
     <key>GitDirty</key>
     <string>${GIT_DIRTY}</string>
     <key>LSMinimumSystemVersion</key>
@@ -100,10 +115,15 @@ codesign --force --sign "$SIGN_IDENTITY" "$STAGED_APP"
 # Quit only once the build has succeeded and been signed, so a broken build
 # leaves the working app running. The install below replaces the bundle a
 # running copy is reading from, so it has to go first either way.
-if pgrep -xq "$APP_NAME"; then
+#
+# -a matters: the app's own Update Now button runs this script, making the app
+# an ancestor of this pgrep/pkill, and BSD pgrep silently excludes ancestors
+# unless told otherwise. Without it the app survives its own update, running
+# stale code under a fresh bundle.
+if pgrep -aqx "$APP_NAME"; then
     echo "Quitting running ${APP_NAME}..."
-    pkill -x "$APP_NAME"
-    while pgrep -xq "$APP_NAME"; do sleep 0.2; done
+    pkill -ax "$APP_NAME"
+    while pgrep -aqx "$APP_NAME"; do sleep 0.2; done
 fi
 
 # Replace rather than merge: dropping a new bundle on top of an old one leaves

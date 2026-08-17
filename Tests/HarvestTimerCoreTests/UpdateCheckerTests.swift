@@ -13,9 +13,12 @@ private func comparison(_ status: String, ahead: Int = 0, behind: Int = 0) -> St
 
 private let stampedBuild = BuildInfo(commit: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", isDirty: false)
 
-private func checker(_ replies: [StubHarvestServer.Reply]) -> (UpdateChecker, StubHarvestServer) {
+private func checker(
+    _ replies: [StubHarvestServer.Reply],
+    branch: String = "main"
+) -> (UpdateChecker, StubHarvestServer) {
     let server = StubHarvestServer(replies)
-    return (UpdateChecker(repository: "owner/repo", branch: "main", session: server.session()), server)
+    return (UpdateChecker(repository: "owner/repo", branch: branch, session: server.session()), server)
 }
 
 @Test("Checking for updates")
@@ -123,6 +126,74 @@ func runUpdateCheckerTests() async {
     }
 }
 
+@Test("Tracking the branch a build came from")
+func runBranchTrackingTests() async {
+    await test("a checker built for a stamped build compares against its branch") {
+        let server = StubHarvestServer([.json(comparison("identical"))])
+        let build = BuildInfo(commit: "abc123", branch: "staging", isDirty: false)
+        let checker = UpdateChecker(for: build, session: server.session())
+        _ = try await checker.status(of: build)
+        expect(
+            server.requests.first?.path.hasSuffix("/compare/abc123...staging") == true,
+            "expected a compare against staging, got \(server.requests.first?.path ?? "none")"
+        )
+    }
+
+    await test("a build with no branch stamp falls back to main") {
+        let build = BuildInfo(commit: "abc123", branch: nil, isDirty: false)
+        let checker = UpdateChecker(for: build)
+        expect(checker.branch == "main", "expected the mainline, got \(checker.branch)")
+    }
+}
+
+@Test("What main holds that a staging branch has not merged")
+func runUnmergedMainlineTests() async {
+    await test("tracking main itself, there is no question to ask and no call made") {
+        let (checker, server) = checker([.json(comparison("identical"))])
+        let count = try await checker.unmergedMainlineCount()
+        expect(count == nil, "expected nil, got \(String(describing: count))")
+        expect(server.callCount == 0, "main against main is not worth a request")
+    }
+
+    await test("the request compares the branch as base against main as head") {
+        let (checker, server) = checker([.json(comparison("identical"))], branch: "staging")
+        _ = try await checker.unmergedMainlineCount()
+        expect(
+            server.requests.first?.path == "/repos/owner/repo/compare/staging...main",
+            "expected staging...main, got \(server.requests.first?.path ?? "none")"
+        )
+    }
+
+    await test("identical branches have nothing unmerged") {
+        let (checker, _) = checker([.json(comparison("identical"))], branch: "staging")
+        expect(try await checker.unmergedMainlineCount() == 0, "expected 0")
+    }
+
+    await test("a branch holding everything main does and more has nothing unmerged") {
+        let (checker, _) = checker([.json(comparison("behind", behind: 3))], branch: "staging")
+        expect(try await checker.unmergedMainlineCount() == 0, "expected 0")
+    }
+
+    await test("commits on main the branch lacks are counted") {
+        let (checker, _) = checker([.json(comparison("ahead", ahead: 5))], branch: "staging")
+        expect(try await checker.unmergedMainlineCount() == 5, "expected 5")
+    }
+
+    await test("a diverged branch counts only what main has that it does not") {
+        let (checker, _) = checker([.json(comparison("diverged", ahead: 2, behind: 7))], branch: "staging")
+        expect(try await checker.unmergedMainlineCount() == 2, "expected 2")
+    }
+
+    await test("the mainline changes link compares the branch against main") {
+        let (checker, _) = checker([], branch: "staging")
+        expect(
+            checker.mainlineChangesURL()?.absoluteString
+                == "https://github.com/owner/repo/compare/staging...main",
+            "got \(checker.mainlineChangesURL()?.absoluteString ?? "none")"
+        )
+    }
+}
+
 @Test("What a build knows about itself")
 func runBuildInfoTests() {
     test("the stamps are read off Info.plist") {
@@ -151,6 +222,31 @@ func runBuildInfoTests() {
     test("anything but \"true\" is clean, so a missing stamp is not alarming") {
         let build = BuildInfo(infoDictionary: ["GitCommit": "abc1234"])
         expect(!build.isDirty, "absent means clean")
+    }
+
+    test("a branch stamp names the branch in the summary") {
+        let build = BuildInfo(infoDictionary: [
+            "GitCommit": "abcdef1234567890", "GitBranch": "staging", "GitDirty": "false",
+        ])
+        expect(build.branch == "staging", "expected the branch stamp")
+        expect(build.summary == "Built from abcdef1 on staging.", "got \(build.summary)")
+    }
+
+    test("the repo path stamp is read, and an empty one means none") {
+        let stamped = BuildInfo(infoDictionary: [
+            "GitCommit": "abc1234", "GitRepoPath": "/Users/someone/repo",
+        ])
+        expect(stamped.repoPath == "/Users/someone/repo", "expected the stamped path")
+        let unstamped = BuildInfo(infoDictionary: ["GitCommit": "abc1234", "GitRepoPath": ""])
+        expect(unstamped.repoPath == nil, "expected no path from an empty stamp")
+    }
+
+    test("an empty branch stamp is no branch at all, as a detached HEAD writes") {
+        for empty in ["", "   "] {
+            let build = BuildInfo(infoDictionary: ["GitCommit": "abc1234", "GitBranch": empty])
+            expect(build.branch == nil, "expected no branch from \"\(empty)\"")
+            expect(build.summary == "Built from abc1234.", "got \(build.summary)")
+        }
     }
 }
 
