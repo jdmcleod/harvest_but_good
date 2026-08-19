@@ -263,6 +263,17 @@ private struct EntryCard: View {
                 movingTime = true
             }
             .help("Move time to another task")
+            Menu {
+                ForEach([5, 10, 15, 20], id: \.self) { minutes in
+                    Button("-\(minutes) minutes") {
+                        Task { await state.trimFromEnd(entry, minutes: minutes) }
+                    }
+                    .disabled(state.liveHours(for: entry) * 60 < Double(minutes))
+                }
+            } label: {
+                Label("Trim From End", systemImage: "scissors")
+            }
+            .help("Take time off the end and show it as a break")
             Button("Delete Entry…", systemImage: "trash", role: .destructive) {
                 confirmingDelete = true
             }
