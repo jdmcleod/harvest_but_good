@@ -442,6 +442,58 @@ public final class AppState {
         }
     }
 
+    /// Cuts `minutes` off the end of an entry's last run and leaves the gap
+    /// to draw as a break: the timer really ran, the tail just wasn't work.
+    public func trimFromEnd(_ entry: TimeEntry, minutes: Int) async {
+        let current = currentVersion(of: entry)
+        let cut = TimeInterval(minutes) * 60
+        guard cut > 0, liveHours(for: current) > 0 else { return }
+        let hours = max(0, liveHours(for: current) - cut / 3600)
+        await perform { api in
+            let updated = try await api.updateHours(entryId: current.id, hours: hours)
+            logTrimBreak(on: current, cut: cut)
+            apply(updated)
+            await sync()
+        }
+    }
+
+    /// Moves the end of the entry's last run back by `cut` rather than
+    /// marking it edited, so the span comes off as a break, not a stripe.
+    /// The builder takes the earliest stop it meets, so the stop already in
+    /// the log just stops closing anything. A running timer also starts
+    /// again now, the same shape an AFK break leaves. An entry with no local
+    /// run — started elsewhere — has no end to move, so it gets the stripe.
+    private func logTrimBreak(on entry: TimeEntry, cut: TimeInterval) {
+        let moment = Date.now
+        let running = entry.isRunning
+            ? [RunningTimer(entryId: entry.id, projectId: entry.project.id, startedAt: entry.timerStartedAt)]
+            : []
+        let blocks = TimelineBuilder.blocks(
+            from: eventLog.events(forDay: entry.spentDate),
+            now: moment,
+            running: running
+        ).filter { $0.entryId == entry.id }
+        guard let block = blocks.max(by: { $0.end < $1.end }) else {
+            logEdit(entry)
+            return
+        }
+        eventLog.append(
+            TimerEvent(
+                entryId: entry.id,
+                action: .stop,
+                timestamp: max(block.start, block.end.addingTimeInterval(-cut)),
+                projectId: entry.project.id
+            ),
+            day: entry.spentDate
+        )
+        if entry.isRunning {
+            eventLog.append(
+                TimerEvent(entryId: entry.id, action: .start, timestamp: moment, projectId: entry.project.id),
+                day: entry.spentDate
+            )
+        }
+    }
+
     /// Picks a stopped entry's timer back up, keeping its notes — unlike
     /// `startTimer`, which matches on empty notes and would leave a noted
     /// entry behind for a fresh unnamed copy.

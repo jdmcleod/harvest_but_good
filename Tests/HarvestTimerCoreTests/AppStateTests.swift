@@ -862,6 +862,130 @@ private func budget(
     )
 }
 
+@Test("Trimming time off the end")
+@MainActor
+func runTrimFromEndTests() async {
+    await test("a running timer loses the tail and the gap draws as a break") {
+        try await withTemporaryDirectory { directory in
+            let startedAt = Date.now.addingTimeInterval(-60 * 60)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: Day(.now),
+                    hours: 1,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: startedAt
+                ),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 15)
+
+            expect(
+                fake.entry(1).map { abs($0.hours - 0.75) < 0.01 } == true,
+                "Harvest should lose the quarter hour, got \(fake.entry(1)?.hours ?? -1)"
+            )
+            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            expect(blocks.count == 2, "the run should be cut in two, got \(blocks.count)")
+            expect(
+                blocks.first.map { abs($0.end.timeIntervalSince(Date.now) + 15 * 60) < 5 } == true,
+                "the first block should end where the trim begins"
+            )
+            let breaks = TimelineBuilder.breaks(between: blocks)
+            expect(breaks.count == 1, "the trimmed span should draw as a break, got \(breaks.count)")
+            expect(
+                !state.modifiedEntryIds(forDay: .now).contains(1),
+                "the blocks still add up, so no stripe"
+            )
+        }
+    }
+
+    await test("a stopped entry's last run ends earlier, unstriped") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let log = EventLog(directory: directory)
+            let runStart = Date.now.addingTimeInterval(-2 * 3600)
+            let runEnd = Date.now.addingTimeInterval(-3600)
+            log.append(TimerEvent(entryId: 1, action: .start, timestamp: runStart, projectId: 10), day: today)
+            log.append(TimerEvent(entryId: 1, action: .stop, timestamp: runEnd, projectId: 10), day: today)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 10)
+
+            expect(
+                fake.entry(1).map { abs($0.hours - (1 - 10.0 / 60)) < 0.01 } == true,
+                "Harvest should lose the ten minutes, got \(fake.entry(1)?.hours ?? -1)"
+            )
+            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            expect(blocks.count == 1, "the run should stay one block, got \(blocks.count)")
+            expect(
+                blocks.first.map { abs($0.end.timeIntervalSince(runEnd) + 10 * 60) < 1 } == true,
+                "the block should end ten minutes earlier"
+            )
+            expect(
+                !state.modifiedEntryIds(forDay: .now).contains(1),
+                "the blocks still add up, so no stripe"
+            )
+        }
+    }
+
+    await test("a trim bigger than the run empties both the hours and the block") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let log = EventLog(directory: directory)
+            let runStart = Date.now.addingTimeInterval(-3600 - 6 * 60)
+            let runEnd = Date.now.addingTimeInterval(-3600)
+            log.append(TimerEvent(entryId: 1, action: .start, timestamp: runStart, projectId: 10), day: today)
+            log.append(TimerEvent(entryId: 1, action: .stop, timestamp: runEnd, projectId: 10), day: today)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 0.1, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 20)
+
+            expect(
+                fake.entry(1).map { $0.hours == 0 } == true,
+                "the hours should floor at zero, got \(fake.entry(1)?.hours ?? -1)"
+            )
+            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            expect(
+                blocks.first.map { $0.end == $0.start } == true,
+                "the stop should clamp to where the run began"
+            )
+        }
+    }
+
+    await test("an entry with no local run loses the hours and gets the stripe") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(.now), hours: 1, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 15)
+
+            expect(
+                fake.entry(1).map { abs($0.hours - 0.75) < 0.01 } == true,
+                "Harvest should still lose the quarter hour"
+            )
+            expect(
+                state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }.isEmpty,
+                "there is no run to shorten"
+            )
+            expect(
+                state.modifiedEntryIds(forDay: .now).contains(1),
+                "with no run to carve, the change marks the entry edited"
+            )
+        }
+    }
+}
+
 @Test("Project budgets")
 @MainActor
 func runProjectBudgetTests() async {
