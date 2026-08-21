@@ -1,0 +1,111 @@
+import SwiftUI
+
+/// The per-weekday hours goals and break allowances, as a settings card.
+struct DailyGoalsCard: View {
+    @Environment(AppState.self) private var state
+
+    /// `goalSettings` is read-only from outside `AppState`, so the switch goes
+    /// through the setter that saves rather than a binding into the store.
+    private var isEnabled: Binding<Bool> {
+        Binding(
+            get: { state.goalSettings.isEnabled },
+            set: { state.setGoalsEnabled($0) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "target")
+                    .foregroundStyle(Color.harvest)
+                    .frame(width: 24, height: 24)
+                Text("Daily Goals")
+                    .font(.headline)
+                Spacer()
+                Toggle("", isOn: isEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            if state.goalSettings.isEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("How many hours you're aiming for each day, and the break you usually take. Breaks don't count toward the goal. They just push back when you finish.")
+                        .foregroundStyle(.secondary)
+                    Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                        GridRow {
+                            Text("")
+                            Text("Goal")
+                            Text("Break")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        ForEach(Weekday.workdays, id: \.self) { weekday in
+                            GoalRow(weekday: weekday)
+                        }
+                    }
+                    Text("Leave a day blank if you don't work it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 32)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+}
+
+private struct GoalRow: View {
+    @Environment(AppState.self) private var state
+    let weekday: Weekday
+
+    @State private var goalText = ""
+    @State private var breakText = ""
+    @FocusState private var focused: Field?
+
+    private enum Field { case goal, breakAllowance }
+
+    var body: some View {
+        GridRow {
+            Text(weekday.shortName)
+                .frame(width: 34, alignment: .leading)
+            field($goalText, placeholder: "8:00", field: .goal)
+            field($breakText, placeholder: "0:30", field: .breakAllowance)
+        }
+        .onAppear(perform: load)
+        // Written back on leaving the field rather than on every keystroke,
+        // so a half-typed "8:" never counts as a day with no goal.
+        .onChange(of: focused) { _, now in
+            if now == nil { commit() }
+        }
+    }
+
+    private func field(_ text: Binding<String>, placeholder: String, field: Field) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.roundedBorder)
+            .monospacedDigit()
+            .frame(width: 64)
+            .focused($focused, equals: field)
+            .onSubmit(commit)
+    }
+
+    private func load() {
+        let goal = state.goalSettings.days[weekday]
+        goalText = goal.map { Hours.formatted($0.hours) } ?? ""
+        breakText = (goal?.breakHours ?? 0) > 0 ? Hours.formatted(goal!.breakHours) : ""
+    }
+
+    private func commit() {
+        state.setGoal(
+            hours: Hours.parse(goalText) ?? 0,
+            breakHours: Hours.parse(breakText) ?? 0,
+            for: weekday
+        )
+        // Reads back what was stored, so "7.5" settles as "7:30".
+        load()
+    }
+}

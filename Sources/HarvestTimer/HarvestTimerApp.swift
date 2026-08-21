@@ -182,6 +182,61 @@ private struct StatusWidget: View {
 
     private var isRunning: Bool { state.runningEntry != nil }
 
+    /// The play/pause control, with today's progress standing in for the
+    /// circle the glyph would otherwise draw around itself. One circle rather
+    /// than two, so the indicator costs the menu bar no room at all.
+    ///
+    /// The track matters as much as the arc: an hour into an eight hour day the
+    /// arc alone is a stray tick, and the glyph loses the outline that made it
+    /// read as a button.
+    @ViewBuilder private var glyph: some View {
+        if let progress = state.todayGoalProgress {
+            ZStack {
+                Circle()
+                    .stroke(Color.primary.opacity(0.25), lineWidth: 1.5)
+                Circle()
+                    .trim(from: 0, to: progress.fraction)
+                    .stroke(
+                        progress.isMet ? Color.harvestGreen : accent,
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: isRunning ? "pause.fill" : "play.fill")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.primary)
+            }
+            .padding(1)
+            .help(goalHelp(progress))
+        } else {
+            Group {
+                if isRunning {
+                    Image(systemName: "pause.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.white, Color.harvest)
+                } else {
+                    Image(systemName: "play.circle")
+                        .foregroundStyle(Color.primary)
+                }
+            }
+            .font(.system(size: 15, weight: .medium))
+        }
+    }
+
+    /// Orange is the running colour throughout the app, so the ring earns it
+    /// only while the clock is going. A stopped timer keeps the ring neutral,
+    /// where it reads as chrome rather than as something happening.
+    ///
+    /// `.primary` rather than white: nothing tints the menu bar behind this, so
+    /// a fixed white would vanish on a light one.
+    private var accent: Color { isRunning ? .harvest : .primary }
+
+    private func goalHelp(_ progress: GoalProgress) -> String {
+        if progress.isMet {
+            return "Goal of \(Hours.formatted(progress.goalHours)) met"
+        }
+        return "\(Hours.formatted(progress.remainingHours)) left of \(Hours.formatted(progress.goalHours))"
+    }
+
     var body: some View {
         // Each button pads itself so the whole strip is clickable, not just
         // the glyph and the digits.
@@ -189,17 +244,8 @@ private struct StatusWidget: View {
             Button {
                 Task { await state.toggleCurrentTimer() }
             } label: {
-                Group {
-                    if isRunning {
-                        Image(systemName: "pause.circle.fill")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(Color.white, Color.harvest)
-                    } else {
-                        Image(systemName: "play.circle")
-                            .foregroundStyle(Color.primary)
-                    }
-                }
-                .font(.system(size: 15, weight: .medium))
+                glyph
+                .frame(width: 16, height: 16)
                 .padding(.leading, 8)
                 .padding(.trailing, 3)
                 .frame(maxHeight: .infinity)
