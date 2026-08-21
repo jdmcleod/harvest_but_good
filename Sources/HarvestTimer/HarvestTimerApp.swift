@@ -182,6 +182,30 @@ private struct StatusWidget: View {
 
     private var isRunning: Bool { state.runningEntry != nil }
 
+    /// Today's progress toward its goal, drawn around the glyph rather than
+    /// beside it so the menu bar item stays the width it already was. A day
+    /// with no goal gets nothing.
+    @ViewBuilder private var goalRing: some View {
+        if let progress = state.todayGoalProgress {
+            Circle()
+                .trim(from: 0, to: progress.fraction)
+                .stroke(
+                    progress.isMet ? Color.harvestGreen : Color.harvest,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .padding(-2.5)
+                .help(goalHelp(progress))
+        }
+    }
+
+    private func goalHelp(_ progress: GoalProgress) -> String {
+        if progress.isMet {
+            return "Goal of \(Hours.formatted(progress.goalHours)) met"
+        }
+        return "\(Hours.formatted(progress.remainingHours)) left of \(Hours.formatted(progress.goalHours))"
+    }
+
     var body: some View {
         // Each button pads itself so the whole strip is clickable, not just
         // the glyph and the digits.
@@ -200,6 +224,7 @@ private struct StatusWidget: View {
                     }
                 }
                 .font(.system(size: 15, weight: .medium))
+                .overlay(goalRing)
                 .padding(.leading, 8)
                 .padding(.trailing, 3)
                 .frame(maxHeight: .infinity)

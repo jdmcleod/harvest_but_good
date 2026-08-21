@@ -14,6 +14,7 @@ public final class AppState {
     public private(set) var book = EntryBook()
     public var favorites: [Favorite] = []
     public private(set) var breakTitles: [String: String] = [:]
+    public private(set) var goalSettings = GoalSettings()
     var projectAssignments: [ProjectAssignment] = []
     public private(set) var projectBudgets: [Int64: ProjectBudget] = [:]
     public var now: Date = .now
@@ -46,6 +47,7 @@ public final class AppState {
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
     private let breakTitlesStore: BreakTitlesStore
+    private let goalsStore: GoalsStore
     /// Set by tests, which stand in their own client rather than reach Harvest.
     private let injectedClient: HarvestClient?
     public static let syncInterval = Duration.seconds(30)
@@ -69,10 +71,12 @@ public final class AppState {
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
+        self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.shared.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
+        goalSettings = goalsStore.load()
     }
 
     /// Builds a state that talks to `client` and keeps its files under
@@ -91,9 +95,11 @@ public final class AppState {
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
+        self.goalsStore = GoalsStore(directory: storageDirectory)
         afkToleranceMinutes = 10
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
+        goalSettings = goalsStore.load()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -153,6 +159,45 @@ public final class AppState {
             return Hours.formatted(liveHours(for: running))
         }
         return Hours.formatted(total(forDay: .now))
+    }
+
+    /// The goal for the weekday `day` falls on, or nil for a day left blank.
+    public func goal(forDay day: Date) -> DayGoal? {
+        goalSettings.goal(for: Weekday(day))
+    }
+
+    /// Whether the break has been waved off for `day`. Yesterday's marker
+    /// simply stops matching, so nothing has to clear it.
+    public func isBreakSkipped(forDay day: Date) -> Bool {
+        goalSettings.breakSkippedOn == Day(day)
+    }
+
+    /// How much break the day has already had, taken from the gaps the
+    /// timeline finds between tracked blocks.
+    ///
+    /// A break under way right now is not a gap yet — a gap needs a block on
+    /// both sides — so the figure only catches up once the next timer starts.
+    public func breakTakenHours(forDay day: Date) -> Double {
+        let breaks = TimelineBuilder.breaks(between: timelineBlocks(forDay: day))
+        return breaks.reduce(0) { $0 + $1.duration } / 3600
+    }
+
+    /// How `day` stands against its goal, or nil when it has none.
+    public func goalProgress(forDay day: Date) -> GoalProgress? {
+        guard let goal = goal(forDay: day) else { return nil }
+        return GoalProgress(
+            goalHours: goal.hours,
+            workedHours: total(forDay: day),
+            breakAllowanceHours: goal.breakHours,
+            breakTakenHours: breakTakenHours(forDay: day),
+            breakSkipped: isBreakSkipped(forDay: day)
+        )
+    }
+
+    /// Today against today's goal, for the menu bar — which shows the day the
+    /// clock is in, whichever day the window happens to be looking at.
+    public var todayGoalProgress: GoalProgress? {
+        goalProgress(forDay: now)
     }
 
     public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
@@ -634,6 +679,23 @@ public final class AppState {
             breakTitles[id] = trimmed
         }
         breakTitlesStore.save(breakTitles)
+    }
+
+    /// Sets the goal for a weekday. Hours of nothing leaves the day unset
+    /// rather than storing a goal of zero.
+    public func setGoal(hours: Double, breakHours: Double, for weekday: Weekday) {
+        if hours > 0 {
+            goalSettings.days[weekday] = DayGoal(hours: hours, breakHours: max(0, breakHours))
+        } else {
+            goalSettings.days.removeValue(forKey: weekday)
+        }
+        goalsStore.save(goalSettings)
+    }
+
+    /// Waves today's break off, or puts it back.
+    public func toggleBreakSkip(forDay day: Date) {
+        goalSettings.breakSkippedOn = isBreakSkipped(forDay: day) ? nil : Day(day)
+        goalsStore.save(goalSettings)
     }
 
     public func addFavorite(_ favorite: Favorite) {
