@@ -16,7 +16,7 @@ struct WeekHeader: View {
 
             HStack(spacing: 3) {
                 ForEach(state.weekDays, id: \.self) { day in
-                    DayTab(day: day, openSettings: { showingSettings = true })
+                    DayTab(day: day)
                 }
             }
 
@@ -64,8 +64,6 @@ struct WeekHeader: View {
 private struct DayTab: View {
     @Environment(AppState.self) private var state
     let day: Date
-    let openSettings: () -> Void
-    @State private var showingGoal = false
 
     private var isSelected: Bool {
         Calendar.current.isDate(day, inSameDayAs: state.selectedDay)
@@ -84,28 +82,9 @@ private struct DayTab: View {
         return isToday ? .white.opacity(0.35) : .clear
     }
 
-    /// How full the day is, drawn as the tab's own border so a 56pt tab does
-    /// not have to find room for a ring of its own.
-    @ViewBuilder private var goalRing: some View {
-        if let progress = state.goalProgress(forDay: day) {
-            RoundedRectangle(cornerRadius: 8)
-                .trim(from: 0, to: progress.fraction)
-                .stroke(
-                    progress.isMet ? Color.harvestGreen : .white,
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                )
-        }
-    }
-
     var body: some View {
         Button {
-            // The second click on a tab is the one that asks about the goal;
-            // the first is still just picking the day.
-            if isSelected {
-                showingGoal.toggle()
-            } else {
-                state.selectedDay = day
-            }
+            state.selectedDay = day
         } label: {
             VStack(spacing: 2) {
                 Text(day.formatted(.dateTime.weekday(.abbreviated)))
@@ -125,107 +104,10 @@ private struct DayTab: View {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(borderColor, lineWidth: 1)
             )
-            .overlay(goalRing)
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .pointingCursor()
         .help(isToday ? "Today" : day.formatted(.dateTime.weekday(.wide).month().day()))
-        .popover(isPresented: $showingGoal, arrowEdge: .bottom) {
-            GoalPopover(day: day, openSettings: {
-                showingGoal = false
-                openSettings()
-            })
-            .environment(state)
-        }
-    }
-}
-
-/// The figures behind a day tab's ring: the goal, what is left of it, and the
-/// time the day ends if the work carries on from here.
-private struct GoalPopover: View {
-    @Environment(AppState.self) private var state
-    let day: Date
-    let openSettings: () -> Void
-
-    private var isToday: Bool { state.isToday(day) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(day.formatted(.dateTime.weekday(.wide).month().day()))
-                .font(.headline)
-
-            if let progress = state.goalProgress(forDay: day) {
-                figures(progress)
-                if let goal = state.goal(forDay: day), goal.breakHours > 0 {
-                    Divider()
-                    breakSection(goal: goal, progress: progress)
-                }
-            } else {
-                Text("No goal set for \(Weekday(day).name)s.")
-                    .foregroundStyle(.secondary)
-                Button("Set Goals…", action: openSettings)
-            }
-        }
-        .padding(14)
-        .frame(width: 260, alignment: .leading)
-    }
-
-    @ViewBuilder private func figures(_ progress: GoalProgress) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-            row("Goal", Hours.formatted(progress.goalHours))
-            row("Worked", Hours.formatted(progress.workedHours))
-            if progress.isMet {
-                row("Left", "met")
-            } else {
-                row("Left", Hours.formatted(progress.remainingHours))
-            }
-        }
-
-        // Only today has a finish time worth naming — on any other day the
-        // clock has already had its say.
-        if isToday {
-            if let finish = progress.finishTime(from: state.now) {
-                let time = finish.formatted(date: .omitted, time: .shortened)
-                Text(
-                    state.runningEntry == nil
-                        ? "Done at \(time), if you start now"
-                        : "Work until \(time)"
-                )
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Color.harvest)
-            } else {
-                Text("Goal met for today.")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Color.harvestGreen)
-            }
-        }
-    }
-
-    @ViewBuilder private func breakSection(goal: DayGoal, progress: GoalProgress) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-            row("Break", Hours.formatted(goal.breakHours))
-            row("Taken", Hours.formatted(progress.breakTakenHours))
-        }
-        if isToday {
-            Toggle(
-                "Skip today's break",
-                isOn: Binding(
-                    get: { state.isBreakSkipped(forDay: day) },
-                    set: { _ in state.toggleBreakSkip(forDay: day) }
-                )
-            )
-            .toggleStyle(.checkbox)
-        }
-    }
-
-    private func row(_ title: String, _ value: String) -> some View {
-        GridRow {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .monospacedDigit()
-                .fontWeight(.medium)
-        }
     }
 }
