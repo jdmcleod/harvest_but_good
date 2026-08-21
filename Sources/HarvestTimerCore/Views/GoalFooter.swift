@@ -12,14 +12,18 @@ struct GoalFooter: View {
 
     private var day: Date { state.selectedDay }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            if let progress = state.goalProgress(forDay: day) {
-                bar(progress)
-                figures(progress)
-            } else {
-                noGoal
+    // The divider lives inside, so switching goals off takes the separator
+    // with the rest of the footer and the list above keeps its own edge.
+    @ViewBuilder var body: some View {
+        if state.goalSettings.isEnabled {
+            VStack(spacing: 0) {
+                Divider()
+                if let progress = state.goalProgress(forDay: day) {
+                    bar(progress)
+                    figures(progress)
+                } else {
+                    noGoal
+                }
             }
         }
     }

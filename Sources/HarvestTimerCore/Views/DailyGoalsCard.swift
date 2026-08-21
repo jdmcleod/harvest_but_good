@@ -2,6 +2,17 @@ import SwiftUI
 
 /// The per-weekday hours goals and break allowances, as a settings card.
 struct DailyGoalsCard: View {
+    @Environment(AppState.self) private var state
+
+    /// `goalSettings` is read-only from outside `AppState`, so the switch goes
+    /// through the setter that saves rather than a binding into the store.
+    private var isEnabled: Binding<Bool> {
+        Binding(
+            get: { state.goalSettings.isEnabled },
+            set: { state.setGoalsEnabled($0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -10,28 +21,34 @@ struct DailyGoalsCard: View {
                     .frame(width: 24, height: 24)
                 Text("Daily Goals")
                     .font(.headline)
+                Spacer()
+                Toggle("", isOn: isEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
             }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("How many hours you're aiming for each day, and the break you usually take. Breaks don't count toward the goal. They just push back when you finish.")
-                    .foregroundStyle(.secondary)
-                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-                    GridRow {
-                        Text("")
-                        Text("Goal")
-                        Text("Break")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if state.goalSettings.isEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("How many hours you're aiming for each day, and the break you usually take. Breaks don't count toward the goal. They just push back when you finish.")
+                        .foregroundStyle(.secondary)
+                    Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                        GridRow {
+                            Text("")
+                            Text("Goal")
+                            Text("Break")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-                    ForEach(Weekday.workdays, id: \.self) { weekday in
-                        GoalRow(weekday: weekday)
+                        ForEach(Weekday.workdays, id: \.self) { weekday in
+                            GoalRow(weekday: weekday)
+                        }
                     }
+                    Text("Leave a day blank if you don't work it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("Leave a day blank if you don't work it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(.leading, 32)
             }
-            .padding(.leading, 32)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

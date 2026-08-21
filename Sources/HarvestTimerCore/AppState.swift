@@ -681,6 +681,13 @@ public final class AppState {
         breakTitlesStore.save(breakTitles)
     }
 
+    /// Turns the whole goals feature on or off. The days keep their goals
+    /// either way, so switching back on picks up where it left off.
+    public func setGoalsEnabled(_ enabled: Bool) {
+        goalSettings.isEnabled = enabled
+        goalsStore.save(goalSettings)
+    }
+
     /// Sets the goal for a weekday. Hours of nothing leaves the day unset
     /// rather than storing a goal of zero.
     public func setGoal(hours: Double, breakHours: Double, for weekday: Weekday) {

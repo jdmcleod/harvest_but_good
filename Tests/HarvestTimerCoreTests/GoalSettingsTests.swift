@@ -52,6 +52,7 @@ func runDailyGoalTests() async {
             ])
             let state = AppState(client: fake, storageDirectory: directory)
             await state.sync()
+            state.setGoalsEnabled(true)
             state.setGoal(hours: 8, breakHours: 0, for: today)
 
             guard let progress = state.todayGoalProgress else {
@@ -81,6 +82,7 @@ func runDailyGoalTests() async {
             ])
             let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
             await state.sync()
+            state.setGoalsEnabled(true)
             state.setGoal(hours: 8, breakHours: 0.5, for: today)
 
             // The AFK path is how the app cuts a run in two, so it is also the
@@ -109,6 +111,7 @@ func runDailyGoalTests() async {
     await test("skipping the break owes none of it, and holds until midnight") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setGoalsEnabled(true)
             state.setGoal(hours: 8, breakHours: 0.5, for: today)
             expect(state.todayGoalProgress?.remainingBreakHours == 0.5, "the whole break is owed to start with")
 
@@ -127,6 +130,45 @@ func runDailyGoalTests() async {
 
             state.toggleBreakSkip(forDay: .now)
             expect(!state.isBreakSkipped(forDay: .now), "toggling again puts the break back")
+        }
+    }
+
+    await test("goals report nothing until the feature is switched on") {
+        try await withTemporaryDirectory { directory in
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.setGoal(hours: 8, breakHours: 0.5, for: today)
+            expect(state.goal(forDay: .now) == nil, "a stored goal stays quiet while the feature is off")
+            expect(state.goalProgress(forDay: .now) == nil, "so the footer has nothing to draw")
+            expect(state.todayGoalProgress == nil, "and the menu bar has no ring")
+
+            state.setGoalsEnabled(true)
+            expect(state.goal(forDay: .now)?.hours == 8, "switching on brings the stored goal back")
+            expect(state.goalProgress(forDay: .now) != nil, "and the footer has figures again")
+            expect(state.todayGoalProgress != nil, "and the menu bar its ring")
+
+            let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
+            expect(reopened.goalSettings.isEnabled, "the switch holds across a restart")
+
+            state.setGoalsEnabled(false)
+            expect(state.goal(forDay: .now) == nil, "switching off hides the goal without losing it")
+            expect(state.goalSettings.days[today]?.hours == 8, "the goal itself is still stored")
+        }
+    }
+
+    await test("a goals file from before the switch reads as off") {
+        try await withTemporaryDirectory { directory in
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try #"{"days":{"monday":{"hours":8,"breakHours":0.5}}}"#.write(
+                to: directory.appendingPathComponent("goals.json"),
+                atomically: true,
+                encoding: .utf8
+            )
+            let settings = GoalsStore(directory: directory).load()
+            expect(!settings.isEnabled, "a file with no switch in it reads as off")
+            expect(
+                settings.days[.monday] == DayGoal(hours: 8, breakHours: 0.5),
+                "and the goals it does hold survive, got \(String(describing: settings.days[.monday]))"
+            )
         }
     }
 

@@ -19,18 +19,37 @@ public struct DayGoal: Codable, Equatable, Sendable {
 }
 
 public struct GoalSettings: Codable, Equatable, Sendable {
+    /// Off until asked for, so the app says nothing about goals to someone who
+    /// does not want them.
+    public var isEnabled: Bool
     public var days: [Weekday: DayGoal]
     /// The day whose break was waved off. A `Day` rather than a flag so it
     /// expires on its own at midnight and still holds across a relaunch.
     public var breakSkippedOn: Day?
 
-    public init(days: [Weekday: DayGoal] = [:], breakSkippedOn: Day? = nil) {
+    public init(
+        isEnabled: Bool = false,
+        days: [Weekday: DayGoal] = [:],
+        breakSkippedOn: Day? = nil
+    ) {
+        self.isEnabled = isEnabled
         self.days = days
         self.breakSkippedOn = breakSkippedOn
     }
 
+    /// Hand-written because the synthesized one throws on a file saved before
+    /// a key existed, and a goals file is worth keeping across a version.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        days = try container.decodeIfPresent([Weekday: DayGoal].self, forKey: .days) ?? [:]
+        breakSkippedOn = try container.decodeIfPresent(Day.self, forKey: .breakSkippedOn)
+    }
+
+    /// Nothing while the feature is off, so every reader of a goal is gated by
+    /// the switch without knowing about it.
     public func goal(for weekday: Weekday) -> DayGoal? {
-        guard let goal = days[weekday], goal.isSet else { return nil }
+        guard isEnabled, let goal = days[weekday], goal.isSet else { return nil }
         return goal
     }
 }
