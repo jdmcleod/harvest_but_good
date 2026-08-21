@@ -12,7 +12,7 @@ struct DailyGoalsCard: View {
                     .font(.headline)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("How long each weekday is meant to be, and how much of a break goes with it. The break is not part of the goal — it only moves the time you finish at.")
+                Text("How many hours you're aiming for each day, and the break you usually take. Breaks don't count toward the goal. They just push back when you finish.")
                     .foregroundStyle(.secondary)
                 Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
                     GridRow {
@@ -27,7 +27,7 @@ struct DailyGoalsCard: View {
                         GoalRow(weekday: weekday)
                     }
                 }
-                Text("Leave a goal blank for a day you don't track.")
+                Text("Leave a day blank if you don't work it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
