@@ -17,7 +17,7 @@ struct MainView: View {
                 .zIndex(1)
             Divider()
             HSplitView {
-                EntryList()
+                EntryList(openSettings: { showingSettings = true })
                     .frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
                 DayTimelineView()
                     .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)

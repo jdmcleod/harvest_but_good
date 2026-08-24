@@ -128,6 +128,8 @@ struct SetupView: View {
                             .fill(Color(nsColor: .controlBackgroundColor))
                     )
 
+                    DailyGoalsCard()
+
                     UpdatesCard()
                 }
 
@@ -151,7 +153,7 @@ struct SetupView: View {
         }
         .frame(
             width: isSheet ? 560 : nil,
-            height: isSheet ? 560 : nil
+            height: isSheet ? 680 : nil
         )
     }
 

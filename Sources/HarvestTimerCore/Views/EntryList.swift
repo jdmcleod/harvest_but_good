@@ -2,6 +2,9 @@ import SwiftUI
 
 struct EntryList: View {
     @Environment(AppState.self) private var state
+    /// The footer's only route to the goal settings, the day tabs no longer
+    /// offering one.
+    let openSettings: () -> Void
     @State private var showingStartTimer = false
 
     var body: some View {
@@ -52,6 +55,8 @@ struct EntryList: View {
                     }
                 }
             }
+
+            GoalFooter(openSettings: openSettings)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .contentShape(Rectangle())
