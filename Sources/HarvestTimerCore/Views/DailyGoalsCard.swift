@@ -19,7 +19,7 @@ struct DailyGoalsCard: View {
                 Image(systemName: "target")
                     .foregroundStyle(Color.harvest)
                     .frame(width: 24, height: 24)
-                Text("Daily Goals")
+                Text("Daily Pace")
                     .font(.headline)
                 Spacer()
                 Toggle("", isOn: isEnabled)
