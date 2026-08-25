@@ -197,7 +197,7 @@ private struct StatusWidget: View {
                 Circle()
                     .trim(from: 0, to: progress.fraction)
                     .stroke(
-                        progress.isMet ? Color.harvestGreen : accent,
+                        accent,
                         style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
@@ -232,7 +232,7 @@ private struct StatusWidget: View {
 
     private func goalHelp(_ progress: GoalProgress) -> String {
         if progress.isMet {
-            return "Goal of \(Hours.formatted(progress.goalHours)) met"
+            return "Pace of \(Hours.formatted(progress.goalHours)) met"
         }
         return "\(Hours.formatted(progress.remainingHours)) left of \(Hours.formatted(progress.goalHours))"
     }
