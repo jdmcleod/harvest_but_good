@@ -34,7 +34,7 @@ struct GoalFooter: View {
                 Capsule()
                     .fill(Color.primary.opacity(0.08))
                 Capsule()
-                    .fill(progress.isMet ? Color.harvestGreen : Color.harvest)
+                    .fill(Color.harvest)
                     .frame(width: geometry.size.width * progress.fraction)
             }
         }
@@ -115,9 +115,9 @@ struct GoalFooter: View {
                         : "When the day ends if the timer runs on"
                 )
         } else {
-            Text("Goal met")
+            Text("Pace met")
                 .font(.callout.weight(.medium))
-                .foregroundStyle(Color.harvestGreen)
+                .foregroundStyle(Color.harvest)
         }
     }
 
