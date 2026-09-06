@@ -10,6 +10,20 @@ struct AFKPromptView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                Button {
+                    state.dismissAFKPrompt()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("Close and leave the time as it is")
+            }
+            .padding(.bottom, -12)
             Image(systemName: "moon.zzz.fill")
                 .font(.system(size: 40))
                 .foregroundStyle(Color.harvest)
@@ -37,13 +51,15 @@ struct AFKPromptView: View {
                     Button("Log \(timeGone) to another task…") {
                         loggingElsewhere = true
                     }
-                    Button("Keep the time") {
+                    Button("Do nothing") {
                         state.dismissAFKPrompt()
                     }
                 }
             }
         }
-        .padding(28)
+        .padding(.horizontal, 28)
+        .padding(.top, 16)
+        .padding(.bottom, 28)
         .frame(width: 400)
         .interactiveDismissDisabled()
         .sheet(isPresented: $loggingElsewhere) {
