@@ -51,7 +51,7 @@ struct AFKPromptView: View {
                     Button("Log \(timeGone) to another task…") {
                         loggingElsewhere = true
                     }
-                    Button("Do nothing") {
+                    Button("Keep the time") {
                         state.dismissAFKPrompt()
                     }
                 }
