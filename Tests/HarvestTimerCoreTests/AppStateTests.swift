@@ -653,6 +653,57 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("keeping away time writes the timer's hours over an edit made elsewhere") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(.now), hours: 1.5, project: 10, task: 100, running: true, startedAt: .now),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            await state.sync()
+            _ = try await fake.updateHours(entryId: 1, hours: 0.5)
+
+            state.afkPrompt = AFKPrompt(
+                entryId: 1,
+                start: Date.now.addingTimeInterval(-60 * 60),
+                end: Date.now.addingTimeInterval(-10 * 60)
+            )
+            await state.keepAFKTime()
+
+            expect(state.afkPrompt == nil, "keeping should close the prompt")
+            expect(
+                fake.entry(1).map { abs($0.hours - 1.5) < 0.01 } == true,
+                "Harvest should get the timer's hours back, got \(fake.entry(1)?.hours ?? -1)"
+            )
+            expect(
+                state.modifiedEntryIds(forDay: .now).contains(1),
+                "the re-saved hours should be logged as an edit"
+            )
+        }
+    }
+
+    await test("doing nothing about away time leaves an edit made elsewhere alone") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(.now), hours: 1.5, project: 10, task: 100, running: true, startedAt: .now),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            await state.sync()
+            _ = try await fake.updateHours(entryId: 1, hours: 0.5)
+            let callsBefore = fake.calls.count
+
+            state.afkPrompt = AFKPrompt(
+                entryId: 1,
+                start: Date.now.addingTimeInterval(-60 * 60),
+                end: Date.now.addingTimeInterval(-10 * 60)
+            )
+            state.dismissAFKPrompt()
+
+            expect(state.afkPrompt == nil, "dismissing should close the prompt")
+            expect(fake.calls.count == callsBefore, "dismissing should not call Harvest")
+            expect(fake.entry(1)?.hours == 0.5, "the edit made elsewhere should stand")
+        }
+    }
+
     await test("a night the machine slept through counts as the whole night") {
         try await withTemporaryDirectory { directory in
             // The night of 2026-08-10: timer on at 3:53pm, last keystroke at

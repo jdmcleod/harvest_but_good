@@ -52,6 +52,9 @@ struct AFKPromptView: View {
                         loggingElsewhere = true
                     }
                     Button("Keep the time") {
+                        Task { await state.keepAFKTime() }
+                    }
+                    Button("Do nothing") {
                         state.dismissAFKPrompt()
                     }
                 }
