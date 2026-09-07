@@ -586,6 +586,17 @@ public final class AppState {
         afkPrompt = nil
     }
 
+    /// Stands by the time the timer ran: the hours as this app sees them go
+    /// back to Harvest, so they win over an adjustment made elsewhere while
+    /// away, and the edit is logged like any other. Dismissing instead leaves
+    /// Harvest alone, so that adjustment stays.
+    public func keepAFKTime() async {
+        guard let prompt = afkPrompt else { return }
+        afkPrompt = nil
+        guard let entry = entry(withId: prompt.entryId) else { return }
+        await updateHours(entry, hours: liveHours(for: entry))
+    }
+
     /// Takes the away time off the entry that was running and puts it on
     /// another project and task instead.
     public func moveAFKTime(projectId: Int64, taskId: Int64) async {
