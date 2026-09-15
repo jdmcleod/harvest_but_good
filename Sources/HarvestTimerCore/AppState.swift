@@ -320,7 +320,7 @@ public final class AppState {
             recordStopForRunningEntry()
             let entry: TimeEntry
             if let existing = entries(forDay: .now).first(where: {
-                $0.project.id == projectId && $0.task.id == taskId && ($0.notes ?? "") == notes
+                !$0.isRunning && $0.project.id == projectId && $0.task.id == taskId && ($0.notes ?? "") == notes
             }) {
                 entry = try await api.restart(entryId: existing.id)
             } else {

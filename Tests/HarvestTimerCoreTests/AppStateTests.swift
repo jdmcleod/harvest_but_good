@@ -182,6 +182,26 @@ func runAppStateTests() async {
         }
     }
 
+    await test("starting a timer that is already running opens a fresh entry instead") {
+        try await withTemporaryDirectory { directory in
+            let today = Day(.now)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: today, hours: 1, project: 10, task: 100, running: true),
+            ])
+            let state = await syncedState(fake, directory: directory)
+
+            await state.startTimer(projectId: 10, taskId: 100)
+            expect(!fake.calls.contains("restart(1)"), "the running entry should be left alone")
+            expect(
+                fake.calls.contains("startTimer(project: 10, task: 100)"),
+                "a second entry for the same project and task should be created"
+            )
+            expect(fake.runningEntry != nil && fake.runningEntry?.id != 1, "the new entry should be the running one")
+            expect(fake.entry(1)?.isRunning == false, "the first entry should have stopped")
+            expect(state.entries(forDay: .now).count == 2, "both entries should show for the day")
+        }
+    }
+
     await test("start counts come from the app's own starts") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
