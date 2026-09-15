@@ -201,14 +201,28 @@ public final class AppState {
     }
 
     public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
-        let running = entries(forDay: day).filter(\.isRunning).map {
+        let events = eventLog.events(forDay: Day(day))
+        return TimelineBuilder.blocks(
+            from: events,
+            now: now,
+            running: runningTimers(forDay: day, events: events)
+        )
+    }
+
+    /// The timers to draw as still going on `day` — the day's own running
+    /// entries, and a timer that ran past midnight. Harvest keeps that one
+    /// booked against the day it began, but the rest of its run happened here,
+    /// so this day's timeline is where the rest belongs.
+    private func runningTimers(forDay day: Date, events: [TimerEvent]) -> [RunningTimer] {
+        var timers = entries(forDay: day).filter(\.isRunning)
+        if let running = runningEntry,
+           !timers.contains(where: { $0.id == running.id }),
+           events.contains(where: { $0.entryId == running.id }) {
+            timers.append(running)
+        }
+        return timers.map {
             RunningTimer(entryId: $0.id, projectId: $0.project.id, startedAt: $0.timerStartedAt)
         }
-        return TimelineBuilder.blocks(
-            from: eventLog.events(forDay: Day(day)),
-            now: now,
-            running: running
-        )
     }
 
     public func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
@@ -223,7 +237,10 @@ public final class AppState {
     /// replaces the running loops rather than adding to them.
     public func start() {
         guard api != nil else { return }
-        syncTicker.start { [weak self] in await self?.sync() }
+        syncTicker.start { [weak self] in
+            await self?.sync()
+            await self?.rollTimerIntoToday()
+        }
         afkTicker.start { [weak self] in self?.afkTick() }
     }
 
@@ -244,6 +261,29 @@ public final class AppState {
             goToToday()
         }
         checkAFK(sinceLastTick: now.timeIntervalSince(previousNow))
+    }
+
+    /// Hands a timer that ran past midnight over to a fresh entry on the new
+    /// day. Harvest books an entry against the day it began and never moves
+    /// it, so a timer left going overnight piles today's hours onto yesterday:
+    /// yesterday's total climbs all morning and today's is short by the same
+    /// amount. Starting a timer stops the running one, so the old entry keeps
+    /// exactly what it had at the handover and the rest lands on today.
+    ///
+    /// Waits out an AFK prompt. The away time spans the midnight, and whether
+    /// any of the night counts at all is the prompt's answer to give, not this
+    /// one's. A past day's entry picked up again on purpose is left alone: its
+    /// run began after midnight, so it never crossed one.
+    public func rollTimerIntoToday() async {
+        guard afkPrompt == nil, let running = runningEntry else { return }
+        guard let startedAt = running.timerStartedAt,
+              running.spentDate < Day(now),
+              startedAt < Calendar.current.startOfDay(for: now) else { return }
+        await startTimer(
+            projectId: running.project.id,
+            taskId: running.task.id,
+            notes: running.notes
+        )
     }
 
     /// Call when the window comes to the front. The first open of a calendar
@@ -332,8 +372,7 @@ public final class AppState {
                 )
             }
             eventLog.append(
-                TimerEvent(entryId: entry.id, action: .start, timestamp: .now, projectId: entry.project.id),
-                day: today
+                TimerEvent(entryId: entry.id, action: .start, timestamp: .now, projectId: entry.project.id)
             )
             apply(entry)
             await sync()
@@ -348,15 +387,13 @@ public final class AppState {
             if current.isRunning {
                 updated = try await api.stop(entryId: current.id)
                 eventLog.append(
-                    TimerEvent(entryId: current.id, action: .stop, timestamp: .now, projectId: current.project.id),
-                    day: Day(.now)
+                    TimerEvent(entryId: current.id, action: .stop, timestamp: .now, projectId: current.project.id)
                 )
             } else {
                 recordStopForRunningEntry()
                 updated = try await api.restart(entryId: current.id)
                 eventLog.append(
-                    TimerEvent(entryId: current.id, action: .start, timestamp: .now, projectId: current.project.id),
-                    day: Day(.now)
+                    TimerEvent(entryId: current.id, action: .start, timestamp: .now, projectId: current.project.id)
                 )
             }
             apply(updated)
@@ -528,13 +565,11 @@ public final class AppState {
                 action: .stop,
                 timestamp: max(block.start, block.end.addingTimeInterval(-cut)),
                 projectId: entry.project.id
-            ),
-            day: entry.spentDate
+            )
         )
         if entry.isRunning {
             eventLog.append(
-                TimerEvent(entryId: entry.id, action: .start, timestamp: moment, projectId: entry.project.id),
-                day: entry.spentDate
+                TimerEvent(entryId: entry.id, action: .start, timestamp: moment, projectId: entry.project.id)
             )
         }
     }
@@ -551,8 +586,7 @@ public final class AppState {
                     action: .start,
                     timestamp: .now,
                     projectId: restarted.project.id
-                ),
-                day: restarted.spentDate
+                )
             )
             apply(restarted)
         }
@@ -624,12 +658,10 @@ public final class AppState {
     /// a break. The hours still match the blocks, so no stripe is warranted.
     private func logAFKBreak(_ prompt: AFKPrompt, on entry: TimeEntry) {
         eventLog.append(
-            TimerEvent(entryId: entry.id, action: .stop, timestamp: prompt.start, projectId: entry.project.id),
-            day: entry.spentDate
+            TimerEvent(entryId: entry.id, action: .stop, timestamp: prompt.start, projectId: entry.project.id)
         )
         eventLog.append(
-            TimerEvent(entryId: entry.id, action: .start, timestamp: prompt.end, projectId: entry.project.id),
-            day: entry.spentDate
+            TimerEvent(entryId: entry.id, action: .start, timestamp: prompt.end, projectId: entry.project.id)
         )
     }
 
@@ -809,8 +841,7 @@ public final class AppState {
         guard previous?.id != current?.id else { return }
         if let previous {
             eventLog.append(
-                TimerEvent(entryId: previous.id, action: .stop, timestamp: now, projectId: previous.project.id),
-                day: previous.spentDate
+                TimerEvent(entryId: previous.id, action: .stop, timestamp: now, projectId: previous.project.id)
             )
         }
         if let current {
@@ -820,8 +851,7 @@ public final class AppState {
                     action: .start,
                     timestamp: current.timerStartedAt ?? now,
                     projectId: current.project.id
-                ),
-                day: current.spentDate
+                )
             )
         }
     }
@@ -829,8 +859,7 @@ public final class AppState {
     private func recordStopForRunningEntry() {
         guard let running = runningEntry else { return }
         eventLog.append(
-            TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id),
-            day: Day(.now)
+            TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id)
         )
     }
 }

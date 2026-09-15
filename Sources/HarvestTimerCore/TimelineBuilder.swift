@@ -9,6 +9,7 @@ public enum TimelineBuilder {
     ) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var openStarts: [Int64: TimerEvent] = [:]
+        let ranHere = Set(events.filter { $0.action == .start || $0.action == .stop }.map(\.entryId))
 
         for event in events.sorted(by: { $0.timestamp < $1.timestamp }) {
             switch event.action {
@@ -36,10 +37,14 @@ public enum TimelineBuilder {
         }
 
         // A timer with no start in the log was started somewhere else, so
-        // fall back to when Harvest says it began.
+        // fall back to when Harvest says it began. One whose run the log
+        // already closed is a different matter: the break it is on, or the
+        // midnight that put the rest on the next day, is the whole point of
+        // the stop, and Harvest's start would draw straight over it.
         for timer in running {
-            guard let start = openStarts[timer.entryId]?.timestamp ?? timer.startedAt,
-                  start <= now else { continue }
+            let logged = openStarts[timer.entryId]?.timestamp
+            if logged == nil, ranHere.contains(timer.entryId) { continue }
+            guard let start = logged ?? timer.startedAt, start <= now else { continue }
             let endOfDay = Calendar.current.startOfDay(for: start).addingTimeInterval(86_400)
             blocks.append(TimelineBlock(
                 entryId: timer.entryId,

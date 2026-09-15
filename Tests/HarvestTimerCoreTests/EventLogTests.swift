@@ -41,6 +41,39 @@ func runEventLogTests() {
         expect(log.events(forDay: day("2026-08-05")).isEmpty, "other days should be empty")
     }
 
+    test("a run across midnight files each half on the day it happened") {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let log = EventLog(directory: directory)
+        let midnight = Calendar.current.startOfDay(for: base.addingTimeInterval(86_400))
+        let start = TimerEvent(
+            entryId: 42,
+            action: .start,
+            timestamp: midnight.addingTimeInterval(-3_600),
+            projectId: 7
+        )
+        let stop = TimerEvent(
+            entryId: 42,
+            action: .stop,
+            timestamp: midnight.addingTimeInterval(3_600),
+            projectId: 7
+        )
+        log.append(start)
+        log.append(stop)
+
+        expect(Day(start.timestamp) != Day(stop.timestamp), "the run should straddle a midnight")
+        expect(
+            log.events(forDay: Day(start.timestamp)) == [start],
+            "the evening should hold only the start"
+        )
+        expect(
+            log.events(forDay: Day(stop.timestamp)) == [stop],
+            "the stop belongs to the day it happened, not the day the run began"
+        )
+    }
+
     test("appending an identical event is ignored") {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HarvestTimerTests-\(UUID().uuidString)")
