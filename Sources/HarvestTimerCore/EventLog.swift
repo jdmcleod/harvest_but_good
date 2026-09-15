@@ -42,6 +42,17 @@ public struct EventLog {
             .compactMap { try? Self.decoder.decode(TimerEvent.self, from: Data($0)) }
     }
 
+    /// Files a run's start or stop on the day its timestamp falls in. The
+    /// timeline is one day's clock, so the moment decides the day — never the
+    /// day the entry is booked against. A run left going past midnight has one
+    /// of each, and only the moment puts its halves on the right timelines.
+    ///
+    /// An edit or a delete is not a moment on the timeline but a note about an
+    /// entry, so those keep `append(_:day:)` and name the entry's day.
+    public func append(_ event: TimerEvent) {
+        append(event, day: Day(event.timestamp))
+    }
+
     public func append(_ event: TimerEvent, day: Day) {
         // The same event can arrive twice — a sync noticing a start the app
         // has already recorded, say. Dropping exact duplicates costs a read of

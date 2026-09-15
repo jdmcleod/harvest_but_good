@@ -673,6 +673,143 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("removing away time from a run across midnight splits it over two days") {
+        try await withTemporaryDirectory { directory in
+            let midnight = Calendar.current.startOfDay(for: base.addingTimeInterval(86_400))
+            let runStart = midnight.addingTimeInterval(-4 * 3_600)
+            let awayStart = midnight.addingTimeInterval(-90 * 60)
+            let awayEnd = midnight.addingTimeInterval(8 * 3_600)
+            let evening = Day(runStart)
+            let morning = Day(awayEnd)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: evening,
+                    hours: 12,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    startedAt: runStart
+                ),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
+            state.selectedDay = runStart
+            await state.sync()
+            let log = EventLog(directory: directory)
+            log.append(TimerEvent(entryId: 1, action: .start, timestamp: runStart, projectId: 10))
+
+            state.afkPrompt = AFKPrompt(entryId: 1, start: awayStart, end: awayEnd)
+            await state.removeAFKTime()
+            state.now = awayEnd.addingTimeInterval(30 * 60)
+
+            expect(
+                log.events(forDay: evening).allSatisfy { $0.timestamp < midnight },
+                "the evening's log should hold nothing that happened after midnight"
+            )
+            expect(
+                log.events(forDay: morning).contains { $0.action == .start && $0.timestamp == awayEnd },
+                "the morning should hold the start that picked the run back up"
+            )
+
+            let eveningBlocks = state.timelineBlocks(forDay: runStart).filter { $0.entryId == 1 }
+            expect(eveningBlocks.count == 1, "the evening ran once, got \(eveningBlocks.count) blocks")
+            expect(
+                eveningBlocks.first.map { abs($0.end.timeIntervalSince(awayStart)) < 1 } == true,
+                "the evening's block should end when the desk emptied, not run on to midnight"
+            )
+            expect(
+                TimelineBuilder.breaks(between: eveningBlocks).isEmpty,
+                "the night away is not a break in the evening"
+            )
+
+            let morningBlocks = state.timelineBlocks(forDay: awayEnd).filter { $0.entryId == 1 }
+            expect(morningBlocks.count == 1, "the morning run should draw, got \(morningBlocks.count) blocks")
+            expect(
+                morningBlocks.first.map { abs($0.start.timeIntervalSince(awayEnd)) < 1 } == true,
+                "the morning's block should start on the way back"
+            )
+        }
+    }
+
+    await test("a timer left running past midnight moves onto a fresh entry for the new day") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = Day(Date.now.addingTimeInterval(-86_400))
+            let lastNight = Calendar.current.startOfDay(for: .now).addingTimeInterval(-2 * 3_600)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1,
+                    day: yesterday,
+                    hours: 3,
+                    project: 10,
+                    task: 100,
+                    running: true,
+                    notes: "overnight",
+                    startedAt: lastNight
+                ),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory)
+            state.selectedDay = Date.now.addingTimeInterval(-86_400)
+            await state.sync()
+
+            await state.rollTimerIntoToday()
+
+            expect(
+                state.entry(withId: 1).map { !$0.isRunning && abs($0.hours - 3) < 0.01 } == true,
+                "yesterday's entry should stop where it stood at the handover"
+            )
+            let carried = state.entries(forDay: .now).first { $0.isRunning }
+            expect(carried != nil, "the clock should carry on today")
+            expect(carried?.id != 1, "it should be a new entry, not yesterday's")
+            expect(
+                carried.map { $0.project.id == 10 && $0.task.id == 100 && $0.notes == "overnight" } == true,
+                "the new entry should be the same work"
+            )
+            expect(state.total(forDay: .now) < 0.1, "today should start from nothing, not yesterday's three hours")
+        }
+    }
+
+    await test("an AFK prompt holds the midnight handover until it is answered") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = Day(Date.now.addingTimeInterval(-86_400))
+            let lastNight = Calendar.current.startOfDay(for: .now).addingTimeInterval(-2 * 3_600)
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: yesterday, hours: 3, project: 10, task: 100, running: true, startedAt: lastNight),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory)
+            state.selectedDay = Date.now.addingTimeInterval(-86_400)
+            await state.sync()
+            state.afkPrompt = AFKPrompt(entryId: 1, start: lastNight, end: .now)
+
+            await state.rollTimerIntoToday()
+
+            expect(
+                state.entry(withId: 1)?.isRunning == true,
+                "how much of the night counts is the prompt's answer, so nothing should move yet"
+            )
+            expect(state.entries(forDay: .now).isEmpty, "no entry should be made for today")
+        }
+    }
+
+    await test("a past day's entry picked up again today is left where it is") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = Day(Date.now.addingTimeInterval(-86_400))
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: yesterday, hours: 3, project: 10, task: 100, running: true, startedAt: .now),
+            ])
+            let state = AppState(client: fake, storageDirectory: directory)
+            state.selectedDay = Date.now.addingTimeInterval(-86_400)
+            await state.sync()
+
+            await state.rollTimerIntoToday()
+
+            expect(
+                state.entry(withId: 1)?.isRunning == true,
+                "its run began after midnight, so it never crossed one"
+            )
+            expect(state.entries(forDay: .now).isEmpty, "backfilling a past day should not spawn a today entry")
+        }
+    }
+
     await test("keeping away time writes the timer's hours over an edit made elsewhere") {
         try await withTemporaryDirectory { directory in
             let fake = FakeHarvest(entries: [
