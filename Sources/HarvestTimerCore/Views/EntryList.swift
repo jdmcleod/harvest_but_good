@@ -7,6 +7,10 @@ struct EntryList: View {
     let openSettings: () -> Void
     @State private var showingStartTimer = false
 
+    /// A day gone by gets an entry to fill in rather than a running timer, so
+    /// the button says which one it is.
+    private var addLabel: String { state.isViewingToday ? "Start Timer" : "Add Entry" }
+
     var body: some View {
         let entries = state.entries(forDay: state.selectedDay)
         let counts = state.startCounts(forDay: state.selectedDay)
@@ -19,14 +23,18 @@ struct EntryList: View {
                 Button {
                     showingStartTimer = true
                 } label: {
-                    Label("Start Timer", systemImage: "play.circle")
+                    Label(addLabel, systemImage: state.isViewingToday ? "play.circle" : "plus.circle")
                         .font(.callout)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.harvestGreen)
                 .controlSize(.small)
                 .pointingCursor()
-                .help("Start a timer for any project")
+                .help(
+                    state.isViewingToday
+                        ? "Start a timer for any project"
+                        : "Add an entry to this day for any project"
+                )
             }
             .padding(.horizontal, 10)
             .frame(height: PanelHeader.height)
@@ -65,13 +73,13 @@ struct EntryList: View {
         }
         .sheet(isPresented: $showingStartTimer) {
             ProjectTaskPickerSheet(
-                title: "Start Timer",
-                actionLabel: "Start Timer",
+                title: addLabel,
+                actionLabel: addLabel,
                 showsNotes: true,
                 showsFavoriteToggle: true
             ) { assignment, task, notes in
                 Task {
-                    await state.startTimer(projectId: assignment.project.id, taskId: task.id, notes: notes)
+                    await state.addEntry(projectId: assignment.project.id, taskId: task.id, notes: notes)
                 }
             }
         }
