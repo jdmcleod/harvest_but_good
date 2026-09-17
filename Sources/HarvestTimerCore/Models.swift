@@ -90,6 +90,16 @@ public struct ProjectAssignment: Codable, Identifiable {
     }
 }
 
+extension ProjectAssignment {
+    /// Each task's own budget, by task id, skipping the tasks without one.
+    /// Only projects budgeted by task carry these.
+    public var taskBudgets: [Int64: Double] {
+        taskAssignments.reduce(into: [:]) { result, task in
+            if let budget = task.budget, budget > 0 { result[task.task.id] = budget }
+        }
+    }
+}
+
 public struct ProjectAssignmentsPage: Codable {
     public let projectAssignments: [ProjectAssignment]
     public let nextPage: Int?

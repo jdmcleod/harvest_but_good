@@ -1233,10 +1233,10 @@ func runTaskBudgetTests() async {
             fake.assignments = [taskBudgetedAssignment(project: 10, budgets: [100: 10])]
             fake.projectHistory[10] = [entry(id: 2, day: today, hours: 1, project: 10, task: 100)]
             let state = await syncedState(fake, directory: directory)
-            expect(!state.taskBudgets.isEmpty, "the task budgets should be there first")
+            expect(state.budgets.hasTaskBudgets, "the task budgets should be there first")
 
             state.removeCredentials()
-            expect(state.taskBudgets.isEmpty, "and gone with the token")
+            expect(!state.budgets.hasTaskBudgets, "and gone with the token")
         }
     }
 }
@@ -1376,8 +1376,8 @@ func runProjectBudgetTests() async {
                 budget(project: 11, by: "project_cost", budget: 10000, spent: 5800, remaining: 4200),
             ]
             let state = await syncedState(fake, directory: directory)
-            expect(state.projectBudgets[10]?.budgetRemaining == 12.5, "project 10's budget should be there")
-            expect(state.projectBudgets[11]?.budgetIsMonetary == true, "so should project 11's")
+            expect(state.budgets[10]?.budgetRemaining == 12.5, "project 10's budget should be there")
+            expect(state.budgets[11]?.budgetIsMonetary == true, "so should project 11's")
         }
     }
 
@@ -1389,7 +1389,7 @@ func runProjectBudgetTests() async {
             let fetches = fake.calls.filter { $0 == "projectBudgets" }
             expect(fetches.count == 1, "two syncs close together should fetch once, fetched \(fetches.count) times")
 
-            state.lastBudgetFetchAt = Date.now.addingTimeInterval(-AppState.budgetRefreshInterval - 1)
+            state.expireBudgets()
             await state.sync()
             let after = fake.calls.filter { $0 == "projectBudgets" }
             expect(after.count == 2, "past the interval a sync should fetch again, fetched \(after.count) times")
@@ -1401,7 +1401,7 @@ func runProjectBudgetTests() async {
             let fake = FakeHarvest()
             fake.budgetsError = HarvestAPIError.forbidden
             let state = await syncedState(fake, directory: directory)
-            expect(state.projectBudgets.isEmpty, "nothing should be shown")
+            expect(state.budgets.isEmpty, "nothing should be shown")
             expect(state.syncError == nil, "a missing role is not an error worth a banner")
 
             await state.sync()
@@ -1415,12 +1415,12 @@ func runProjectBudgetTests() async {
             let fake = FakeHarvest()
             fake.budgets = [budget(project: 10, budget: 40, spent: 20, remaining: 20)]
             let state = await syncedState(fake, directory: directory)
-            expect(state.projectBudgets[10] != nil, "the first fetch should land")
+            expect(state.budgets[10] != nil, "the first fetch should land")
 
             fake.budgetsError = HarvestAPIError.network(URLError(.timedOut))
-            state.lastBudgetFetchAt = .distantPast
+            state.expireBudgets()
             await state.sync()
-            expect(state.projectBudgets[10] != nil, "a flaky fetch should not blank the bars")
+            expect(state.budgets[10] != nil, "a flaky fetch should not blank the bars")
             expect(state.syncError == nil, "and should not raise the banner")
         }
     }
@@ -1430,11 +1430,11 @@ func runProjectBudgetTests() async {
             let fake = FakeHarvest()
             fake.budgets = [budget(project: 10, budget: 40, spent: 20, remaining: 20)]
             let state = await syncedState(fake, directory: directory)
-            expect(!state.projectBudgets.isEmpty, "the budgets should be there first")
+            expect(!state.budgets.isEmpty, "the budgets should be there first")
 
             state.removeCredentials()
-            expect(state.projectBudgets.isEmpty, "and gone with the token")
-            expect(state.lastBudgetFetchAt == nil, "along with the fetch stamp")
+            expect(state.budgets.isEmpty, "and gone with the token")
+            expect(state.budgets.lastFetchAt == nil, "along with the fetch stamp")
         }
     }
 

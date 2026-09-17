@@ -16,9 +16,9 @@ public final class AppState {
     public private(set) var breakTitles: [String: String] = [:]
     public private(set) var goalSettings = GoalSettings()
     var projectAssignments: [ProjectAssignment] = []
-    public private(set) var projectBudgets: [Int64: ProjectBudget] = [:]
-    /// Per-task budgets, by project id, for the projects budgeted that way.
-    public private(set) var taskBudgets: [Int64: TaskBudgets] = [:]
+    /// Budgets as they stand: project rows, per-task budgets, and the clock
+    /// that keeps them from being asked for on every sync.
+    public private(set) var budgets = BudgetBook()
     public var now: Date = .now
     public var lastSyncAt: Date = .now
     public var syncError: String?
@@ -40,11 +40,6 @@ public final class AppState {
     private static let afkToleranceKey = "afkToleranceMinutes"
     private var currentUserId: Int64?
     private var companyBaseUri: String?
-    /// When budgets last came in. Internal, not private, so a test can put it
-    /// in the past instead of waiting out the refresh interval.
-    var lastBudgetFetchAt: Date?
-    private var budgetsUnavailable = false
-    static let budgetRefreshInterval: TimeInterval = 5 * 60
     private let weekCalendar = WeekCalendar()
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
@@ -333,22 +328,21 @@ public final class AppState {
         await loadProjectBudgets()
     }
 
+    /// Internal, so a test can put the last fetch in the past instead of
+    /// waiting out the refresh interval.
+    func expireBudgets() {
+        budgets.lastFetchAt = .distantPast
+    }
+
     /// Fetches the budget report, at most once per refresh interval unless
-    /// `force` says otherwise. Harvest only shows budgets to administrators
-    /// and managers, so a 403 turns the feature off quietly; other failures
-    /// keep whatever was shown before.
+    /// `force` says otherwise. A 403 turns the feature off quietly; other
+    /// failures keep whatever was shown before.
     func loadProjectBudgets(force: Bool = false) async {
-        guard let api, !budgetsUnavailable else { return }
-        if !force, let lastBudgetFetchAt,
-           Date.now.timeIntervalSince(lastBudgetFetchAt) < Self.budgetRefreshInterval {
-            return
-        }
+        guard let api, budgets.needsRefresh(force: force) else { return }
         do {
-            let budgets = try await api.projectBudgets()
-            projectBudgets = Dictionary(budgets.map { ($0.projectId, $0) }) { _, last in last }
-            lastBudgetFetchAt = .now
+            budgets.received(try await api.projectBudgets())
         } catch HarvestAPIError.forbidden {
-            budgetsUnavailable = true
+            budgets.refused()
             return
         } catch { return }
         await loadTaskBudgets()
@@ -358,49 +352,36 @@ public final class AppState {
     /// that are budgeted by task. Only those projects, because each one costs
     /// a pass over its whole time-entry history.
     private func loadTaskBudgets() async {
-        let projectIds = Set(book.all.map(\.project.id)).filter {
-            projectBudgets[$0]?.budgetIsPerTask == true
-        }
+        let projectIds = budgets.perTaskProjects(among: Set(book.all.map(\.project.id)))
         guard !projectIds.isEmpty else {
-            taskBudgets = [:]
+            budgets.setTaskBudgets([:])
             return
         }
         await loadProjectAssignments(force: true)
         var built: [Int64: TaskBudgets] = [:]
         for projectId in projectIds {
-            guard let budget = projectBudgets[projectId] else { continue }
-            let budgets = taskBudgetAmounts(forProject: projectId)
-            guard !budgets.isEmpty else { continue }
+            guard let budget = budgets[projectId] else { continue }
+            let amounts = projectAssignments
+                .first { $0.project.id == projectId }?
+                .taskBudgets ?? [:]
+            guard !amounts.isEmpty else { continue }
             guard let entries = try? await api?.projectTimeEntries(projectId: projectId) else {
                 // Keep what we had rather than blank the line on one failure.
-                built[projectId] = taskBudgets[projectId]
+                built[projectId] = budgets.taskBudgets(forProject: projectId)
                 continue
             }
             built[projectId] = TaskBudgets(
-                budgets: budgets,
+                budgets: amounts,
                 entries: entries,
                 isMonetary: budget.budgetIsMonetary
             )
         }
-        taskBudgets = built
+        budgets.setTaskBudgets(built)
     }
 
-    private func taskBudgetAmounts(forProject projectId: Int64) -> [Int64: Double] {
-        guard let assignment = projectAssignments.first(where: { $0.project.id == projectId })
-        else { return [:] }
-        return assignment.taskAssignments.reduce(into: [:]) { result, task in
-            if let budget = task.budget, budget > 0 { result[task.task.id] = budget }
-        }
-    }
-
-    /// The budget to draw on an entry's card: its own task's when the project
-    /// is budgeted by task, the project's otherwise.
+    /// The budget to draw on an entry's card.
     public func budgetLine(for entry: TimeEntry) -> BudgetLine? {
-        guard let budget = projectBudgets[entry.project.id] else { return nil }
-        if budget.budgetIsPerTask {
-            return taskBudgets[entry.project.id]?[entry.task.id]
-        }
-        return budget.line
+        budgets.line(for: entry)
     }
 
     public func startFavorite(_ favorite: Favorite) async {
@@ -853,10 +834,7 @@ public final class AppState {
         self.credentials = credentials
         currentUserId = nil
         companyBaseUri = nil
-        projectBudgets = [:]
-        taskBudgets = [:]
-        budgetsUnavailable = false
-        lastBudgetFetchAt = nil
+        budgets.clear()
         start()
     }
 
@@ -867,10 +845,7 @@ public final class AppState {
         companyBaseUri = nil
         book.removeAll()
         projectAssignments = []
-        projectBudgets = [:]
-        taskBudgets = [:]
-        budgetsUnavailable = false
-        lastBudgetFetchAt = nil
+        budgets.clear()
         afkPrompt = nil
         stop()
     }
