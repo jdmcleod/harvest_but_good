@@ -52,7 +52,7 @@ struct MoveTimeSheet: View {
         }
         .padding(20)
         .frame(width: 460)
-        .task { await state.loadProjectAssignments() }
+        .task { await state.assignments.load() }
         .onAppear { amountText = Hours.formatted(sourceHours) }
     }
 
@@ -128,7 +128,7 @@ struct MoveTimeSheet: View {
 
     /// The day's other entries — where a move usually goes.
     private var dayEntries: [TimeEntry] {
-        state.entries(onDate: entry.spentDate).filter {
+        state.entries.entries(onDate: entry.spentDate).filter {
             $0.id != entry.id
                 && ProjectSearch.matches("\($0.client.name) \($0.project.name) \($0.task.name)", query: search)
         }
@@ -137,15 +137,15 @@ struct MoveTimeSheet: View {
     /// The clock keeps ticking while the sheet is open, so a running entry's
     /// time is whatever it has reached now.
     private var sourceHours: Double {
-        state.liveHours(for: state.entry(withId: entry.id) ?? entry)
+        state.entries.liveHours(for: state.entries.entry(withId: entry.id) ?? entry)
     }
 
     private var matchingProjects: [ProjectSearch.Match] {
-        ProjectSearch.matches(in: state.projectAssignments, query: search)
+        ProjectSearch.matches(in: state.assignments.all, query: search)
     }
 
     private var browsingAssignment: ProjectAssignment? {
-        state.projectAssignments.first { $0.id == browsingAssignmentId }
+        state.assignments.all.first { $0.id == browsingAssignmentId }
     }
 
     private var amount: Double? {
@@ -156,7 +156,7 @@ struct MoveTimeSheet: View {
     private func move() {
         guard let amount, let projectId = destinationProjectId, let taskId = destinationTaskId else { return }
         Task {
-            await state.moveTime(
+            await state.entries.moveTime(
                 entry,
                 hours: amount,
                 projectId: projectId,

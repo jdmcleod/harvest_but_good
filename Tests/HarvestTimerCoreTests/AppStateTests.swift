@@ -11,7 +11,7 @@ private func syncedState(
     selecting day: Date = .now
 ) async -> AppState {
     let state = AppState(client: fake, storageDirectory: directory)
-    state.selectedDay = day
+    state.clock.selectedDay = day
     await state.sync()
     return state
 }
@@ -29,13 +29,13 @@ func runAppStateTests() async {
                 entry(id: 2, day: today, hours: 2, project: 11, task: 110),
             ])
             let state = await syncedState(fake, directory: directory)
-            let running = state.entry(withId: 1)!
-            expect(state.liveHours(for: running) == 1, "at sync time a running entry has its own hours")
+            let running = state.entries.entry(withId: 1)!
+            expect(state.entries.liveHours(for: running) == 1, "at sync time a running entry has its own hours")
 
-            state.now = state.lastSyncAt.addingTimeInterval(1800)
-            expect(state.liveHours(for: running) == 1.5, "half an hour later it should read 1.5")
-            expect(state.liveHours(for: state.entry(withId: 2)!) == 2, "a stopped entry should not move")
-            expect(state.total(forDay: .now) == 3.5, "the day total should include the live time")
+            state.clock.now = state.entries.lastSyncAt.addingTimeInterval(1800)
+            expect(state.entries.liveHours(for: running) == 1.5, "half an hour later it should read 1.5")
+            expect(state.entries.liveHours(for: state.entries.entry(withId: 2)!) == 2, "a stopped entry should not move")
+            expect(state.entries.total(forDay: .now) == 3.5, "the day total should include the live time")
             expect(state.menuBarTitle == "1:30", "the menu bar should show the running entry")
         }
     }
@@ -55,18 +55,18 @@ func runAppStateTests() async {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             // 6 August 2025 is a Wednesday.
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
-            let days = state.weekDays.map { Day($0).name }
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
+            let days = state.clock.weekDays.map { Day($0).name }
             expect(
                 days == ["2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08"],
                 "expected Monday through Friday, got \(days)"
             )
 
             // A Monday and a Friday should both land on the same week.
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
-            expect(state.weekDays.map { Day($0).name } == days, "Monday should give the same week")
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 8))!
-            expect(state.weekDays.map { Day($0).name } == days, "Friday should give the same week")
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
+            expect(state.clock.weekDays.map { Day($0).name } == days, "Monday should give the same week")
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 8))!
+            expect(state.clock.weekDays.map { Day($0).name } == days, "Friday should give the same week")
         }
     }
 
@@ -74,31 +74,31 @@ func runAppStateTests() async {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             // Thursday 7 August 2025, so the week runs 4th to 8th.
-            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
-            state.selectedDay = state.now
-            expect(state.isViewingToday, "the clock's own day is today")
+            state.clock.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            state.clock.selectedDay = state.clock.now
+            expect(state.clock.isViewingToday, "the clock's own day is today")
 
             // The whole point of the button: another day of this same week is
             // somewhere to come back from, where the week check said otherwise.
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
-            expect(!state.isViewingToday, "Monday of this week is not today")
-            expect(state.isToday(state.now), "Thursday is still today whatever is selected")
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 4))!
+            expect(!state.clock.isViewingToday, "Monday of this week is not today")
+            expect(state.clock.isToday(state.clock.now), "Thursday is still today whatever is selected")
 
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 1))!
-            expect(!state.isViewingToday, "a day in the week before is not today")
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 11))!
-            expect(!state.isViewingToday, "a day in the week after is not today")
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 1))!
+            expect(!state.clock.isViewingToday, "a day in the week before is not today")
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 11))!
+            expect(!state.clock.isViewingToday, "a day in the week after is not today")
         }
     }
 
     await test("the day tabs read today off the app's clock, not the system's") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            state.clock.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
             let thursday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7, hour: 23))!
-            expect(state.isToday(thursday), "any hour of the clock's day counts as today")
+            expect(state.clock.isToday(thursday), "any hour of the clock's day counts as today")
             expect(
-                !state.isToday(.now),
+                !state.clock.isToday(.now),
                 "the real date should not read as today while the clock sits in 2025"
             )
         }
@@ -107,31 +107,31 @@ func runAppStateTests() async {
     await test("going back to today lands on today") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            state.clock.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
             // Two weeks back, on a Tuesday rather than today's Thursday.
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 7, day: 22))!
-            expect(!state.isViewingToday, "the setup should start away from today")
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 7, day: 22))!
+            expect(!state.clock.isViewingToday, "the setup should start away from today")
 
-            state.goToToday()
+            state.clock.goToToday()
             expect(
-                calendar.isDate(state.selectedDay, inSameDayAs: state.now),
-                "expected today, got \(Day(state.selectedDay).name)"
+                calendar.isDate(state.clock.selectedDay, inSameDayAs: state.clock.now),
+                "expected today, got \(Day(state.clock.selectedDay).name)"
             )
-            expect(state.isViewingToday, "and the way back should stop being on offer")
+            expect(state.clock.isViewingToday, "and the way back should stop being on offer")
         }
     }
 
     await test("going back to today from another day of this same week") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
-            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 5))!
-            expect(!state.isViewingToday, "Tuesday of this week is somewhere to come back from")
+            state.clock.now = calendar.date(from: DateComponents(year: 2025, month: 8, day: 7))!
+            state.clock.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 5))!
+            expect(!state.clock.isViewingToday, "Tuesday of this week is somewhere to come back from")
 
-            state.goToToday()
+            state.clock.goToToday()
             expect(
-                calendar.isDate(state.selectedDay, inSameDayAs: state.now),
-                "expected today, got \(Day(state.selectedDay).name)"
+                calendar.isDate(state.clock.selectedDay, inSameDayAs: state.clock.now),
+                "expected today, got \(Day(state.clock.selectedDay).name)"
             )
         }
     }
@@ -154,7 +154,7 @@ func runAppStateTests() async {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             state.selectedEntryId = 42
-            state.selectedDay = calendar.date(byAdding: .day, value: -1, to: state.selectedDay)!
+            state.clock.selectedDay = calendar.date(byAdding: .day, value: -1, to: state.clock.selectedDay)!
             expect(state.selectedEntryId == nil, "the selection should not survive a day change")
         }
     }
@@ -167,12 +167,12 @@ func runAppStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.startTimer(projectId: 10, taskId: 100)
+            await state.entries.startTimer(projectId: 10, taskId: 100)
             expect(fake.calls.contains("restart(1)"), "should restart the entry it already has")
             expect(!fake.calls.contains { $0.hasPrefix("startTimer") }, "should not create a second entry")
             expect(fake.runningEntry?.id == 1, "entry 1 should be running")
 
-            await state.startTimer(projectId: 20, taskId: 200)
+            await state.entries.startTimer(projectId: 20, taskId: 200)
             expect(
                 fake.calls.contains("startTimer(project: 20, task: 200)"),
                 "an unseen project should get a fresh entry"
@@ -195,8 +195,8 @@ func runAppStateTests() async {
             )
             expect(!fake.calls.contains { $0.hasPrefix("startTimer") }, "a day gone by gets no running timer")
             expect(fake.runningEntry == nil, "nothing should be running")
-            expect(state.entries(forDay: yesterday).count == 1, "the entry should show on that day")
-            expect(state.entries(forDay: .now).isEmpty, "today should be left alone")
+            expect(state.entries.entries(forDay: yesterday).count == 1, "the entry should show on that day")
+            expect(state.entries.entries(forDay: .now).isEmpty, "today should be left alone")
         }
     }
 
@@ -243,7 +243,7 @@ func runAppStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.startTimer(projectId: 10, taskId: 100)
+            await state.entries.startTimer(projectId: 10, taskId: 100)
             expect(!fake.calls.contains("restart(1)"), "the running entry should be left alone")
             expect(
                 fake.calls.contains("startTimer(project: 10, task: 100)"),
@@ -251,7 +251,7 @@ func runAppStateTests() async {
             )
             expect(fake.runningEntry != nil && fake.runningEntry?.id != 1, "the new entry should be the running one")
             expect(fake.entry(1)?.isRunning == false, "the first entry should have stopped")
-            expect(state.entries(forDay: .now).count == 2, "both entries should show for the day")
+            expect(state.entries.entries(forDay: .now).count == 2, "both entries should show for the day")
         }
     }
 
@@ -262,12 +262,12 @@ func runAppStateTests() async {
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
             ])
             let state = await syncedState(fake, directory: directory)
-            expect(state.startCounts(forDay: .now)[1] == nil, "no starts yet")
+            expect(state.timeline.startCounts(forDay: .now)[1] == nil, "no starts yet")
 
-            await state.startTimer(projectId: 10, taskId: 100)
-            await state.toggle(state.entry(withId: 1)!)
-            await state.startTimer(projectId: 10, taskId: 100)
-            expect(state.startCounts(forDay: .now)[1] == 2, "two starts of entry 1")
+            await state.entries.startTimer(projectId: 10, taskId: 100)
+            await state.entries.toggle(state.entries.entry(withId: 1)!)
+            await state.entries.startTimer(projectId: 10, taskId: 100)
+            expect(state.timeline.startCounts(forDay: .now)[1] == 2, "two starts of entry 1")
         }
     }
 
@@ -281,13 +281,13 @@ func runAppStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.toggle(state.entry(withId: 3)!)
-            await state.toggle(state.entry(withId: 1)!)
-            await state.toggleCurrentTimer()
-            expect(state.runningEntry == nil, "the button should stop what is running")
+            await state.entries.toggle(state.entries.entry(withId: 3)!)
+            await state.entries.toggle(state.entries.entry(withId: 1)!)
+            await state.entries.toggleCurrentTimer()
+            expect(state.entries.running == nil, "the button should stop what is running")
 
-            await state.toggleCurrentTimer()
-            expect(state.runningEntry?.id == 1, "expected entry 1 back, got \(state.runningEntry?.id ?? -1)")
+            await state.entries.toggleCurrentTimer()
+            expect(state.entries.running?.id == 1, "expected entry 1 back, got \(state.entries.running?.id ?? -1)")
         }
     }
 
@@ -300,8 +300,8 @@ func runAppStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.toggleCurrentTimer()
-            expect(state.runningEntry?.id == 2, "expected the last of the list, got \(state.runningEntry?.id ?? -1)")
+            await state.entries.toggleCurrentTimer()
+            expect(state.entries.running?.id == 2, "expected the last of the list, got \(state.entries.running?.id ?? -1)")
         }
     }
 
@@ -312,12 +312,12 @@ func runAppStateTests() async {
                 entry(id: 1, day: today, hours: 1, project: 10, task: 100),
             ])
             let state = await syncedState(fake, directory: directory)
-            expect(state.modifiedEntryIds(forDay: .now).isEmpty, "nothing edited yet")
+            expect(state.timeline.modifiedEntryIds(forDay: .now).isEmpty, "nothing edited yet")
 
-            await state.updateHours(state.entry(withId: 1)!, hours: 2)
+            await state.entries.updateHours(state.entries.entry(withId: 1)!, hours: 2)
             expect(fake.entry(1)?.hours == 2, "hours should reach Harvest")
-            expect(state.entry(withId: 1)?.hours == 2, "the local copy should follow")
-            expect(state.modifiedEntryIds(forDay: .now) == [1], "the edit should be logged")
+            expect(state.entries.entry(withId: 1)?.hours == 2, "the local copy should follow")
+            expect(state.timeline.modifiedEntryIds(forDay: .now) == [1], "the edit should be logged")
         }
     }
 
@@ -330,21 +330,21 @@ func runAppStateTests() async {
             let state = await syncedState(fake, directory: directory)
 
             // Half an hour of live time has piled up on top of the synced hours.
-            state.now = state.lastSyncAt.addingTimeInterval(1800)
-            expect(state.liveHours(for: state.entry(withId: 1)!) == 1.5, "the timer should read 1.5 first")
+            state.clock.now = state.entries.lastSyncAt.addingTimeInterval(1800)
+            expect(state.entries.liveHours(for: state.entries.entry(withId: 1)!) == 1.5, "the timer should read 1.5 first")
 
-            await state.updateHours(state.entry(withId: 1)!, hours: 3)
-            let edited = state.entry(withId: 1)!
+            await state.entries.updateHours(state.entries.entry(withId: 1)!, hours: 3)
+            let edited = state.entries.entry(withId: 1)!
             expect(edited.isRunning, "the timer should still be running after the edit")
             expect(fake.entry(1)?.isRunning == true, "and Harvest should still call it running")
             expect(edited.hours == 3, "the typed value should land")
             expect(
-                state.liveHours(for: edited) == 3,
+                state.entries.liveHours(for: edited) == 3,
                 "the live clock should restart from the typed value, not stack the old 30 minutes on top"
             )
 
-            state.now = state.lastSyncAt.addingTimeInterval(900)
-            expect(state.liveHours(for: edited) == 3.25, "and keep counting up from there")
+            state.clock.now = state.entries.lastSyncAt.addingTimeInterval(900)
+            expect(state.entries.liveHours(for: edited) == 3.25, "and keep counting up from there")
         }
     }
 
@@ -356,12 +356,12 @@ func runAppStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.updateProjectTask(state.entry(withId: 1)!, projectId: 20, taskId: 200)
-            expect(state.entry(withId: 1)?.project.id == 20, "project should change")
-            expect(state.entry(withId: 1)?.hours == 1.5, "hours should be untouched")
+            await state.entries.updateProjectTask(state.entries.entry(withId: 1)!, projectId: 20, taskId: 200)
+            expect(state.entries.entry(withId: 1)?.project.id == 20, "project should change")
+            expect(state.entries.entry(withId: 1)?.hours == 1.5, "hours should be untouched")
 
             let callsBefore = fake.calls.count
-            await state.updateProjectTask(state.entry(withId: 1)!, projectId: 20, taskId: 200)
+            await state.entries.updateProjectTask(state.entries.entry(withId: 1)!, projectId: 20, taskId: 200)
             expect(fake.calls.count == callsBefore, "setting the same project should not call Harvest")
         }
     }
@@ -375,11 +375,11 @@ func runAppStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.deleteEntry(state.entry(withId: 1)!)
+            await state.entries.delete(state.entries.entry(withId: 1)!)
             expect(fake.entry(1) == nil, "the entry should be gone from Harvest")
-            expect(state.entry(withId: 1) == nil, "and gone locally")
-            expect(state.entries(forDay: .now).map(\.id) == [2], "the other entry should remain")
-            expect(state.modifiedEntryIds(forDay: .now) == [1], "the deletion should be logged")
+            expect(state.entries.entry(withId: 1) == nil, "and gone locally")
+            expect(state.entries.entries(forDay: .now).map(\.id) == [2], "the other entry should remain")
+            expect(state.timeline.modifiedEntryIds(forDay: .now) == [1], "the deletion should be logged")
         }
     }
 
@@ -392,12 +392,12 @@ func runAppStateTests() async {
             let state = await syncedState(fake, directory: directory)
 
             fake.failNextCall = FakeHarvest.FakeError.noSuchEntry
-            await state.updateHours(state.entry(withId: 1)!, hours: 5)
-            expect(state.syncError != nil, "the failure should be reported")
-            expect(state.entry(withId: 1)?.hours == 1, "the local copy should not have changed")
+            await state.entries.updateHours(state.entries.entry(withId: 1)!, hours: 5)
+            expect(state.errors.message != nil, "the failure should be reported")
+            expect(state.entries.entry(withId: 1)?.hours == 1, "the local copy should not have changed")
 
             await state.sync()
-            expect(state.syncError == nil, "a good sync should clear the error")
+            expect(state.errors.message == nil, "a good sync should clear the error")
         }
     }
 
@@ -416,13 +416,13 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
 
             expect(fake.entry(1)?.hours == 1.5, "the source should keep the rest, got \(fake.entry(1)!.hours)")
             let destination = fake.entries.values.first { $0.project.id == 20 }
             expect(destination?.hours == 0.5, "the destination should hold the moved time")
             expect(destination?.notes == "Debugging", "notes should come along to a fresh entry")
-            expect(state.total(forDay: .now) == 2, "the day total should not change")
+            expect(state.entries.total(forDay: .now) == 2, "the day total should not change")
         }
     }
 
@@ -435,7 +435,7 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
 
             expect(fake.entry(2)?.hours == 1.5, "the destination should absorb the time")
             expect(fake.entry(1)?.hours == 1.5, "the source should keep the rest")
@@ -444,7 +444,7 @@ private func runMoveTimeStateTests() async {
                 !fake.calls.contains { $0.hasPrefix("createEntry") },
                 "merging should not create an entry"
             )
-            expect(state.total(forDay: .now) == 3, "the day total should not change")
+            expect(state.entries.total(forDay: .now) == 3, "the day total should not change")
         }
     }
 
@@ -457,8 +457,8 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(
-                state.entry(withId: 1)!,
+            await state.entries.moveTime(
+                state.entries.entry(withId: 1)!,
                 hours: 0.5,
                 projectId: 10,
                 taskId: 100,
@@ -479,7 +479,7 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
 
             expect(fake.calls.contains("restart(1)"), "the source should pick its own timer back up")
             expect(fake.entries.count == 2, "only the destination should be new, got \(fake.entries.count)")
@@ -496,13 +496,13 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 2, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 2, projectId: 20, taskId: 200)
 
             expect(fake.entry(1) == nil, "the emptied source should be deleted")
-            expect(state.entry(withId: 1) == nil, "and gone locally too")
+            expect(state.entries.entry(withId: 1) == nil, "and gone locally too")
             let destination = fake.entries.values.first { $0.project.id == 20 }
             expect(destination?.hours == 2, "the destination should hold all of it")
-            expect(state.total(forDay: .now) == 2, "the day total should not change")
+            expect(state.entries.total(forDay: .now) == 2, "the day total should not change")
         }
     }
 
@@ -514,7 +514,7 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 5, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 5, projectId: 20, taskId: 200)
 
             expect(fake.entry(1) == nil, "the source should be emptied and deleted")
             expect(
@@ -532,7 +532,7 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
 
             let stopIndex = fake.calls.firstIndex(of: "stop(1)")
             let createIndex = fake.calls.firstIndex { $0.hasPrefix("createEntry") }
@@ -554,11 +554,11 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 2, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 2, projectId: 20, taskId: 200)
 
             expect(fake.entry(1) == nil, "the emptied source should be gone")
             expect(fake.runningEntry?.project.id == 20, "the destination should be running")
-            expect(state.runningEntry?.project.id == 20, "and the state should agree")
+            expect(state.entries.running?.project.id == 20, "and the state should agree")
         }
     }
 
@@ -571,7 +571,7 @@ private func runMoveTimeStateTests() async {
             let state = await syncedState(fake, directory: directory)
             let callsBefore = fake.calls.count
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 1, projectId: 10, taskId: 100)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 1, projectId: 10, taskId: 100)
 
             expect(fake.calls.count == callsBefore, "moving onto itself should not call Harvest")
             expect(fake.entry(1)?.hours == 2, "the entry should be untouched")
@@ -588,11 +588,11 @@ private func runMoveTimeStateTests() async {
             let state = await syncedState(fake, directory: directory)
             let callsBefore = fake.calls.count
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 0, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 0, projectId: 20, taskId: 200)
             expect(fake.calls.count == callsBefore, "a zero move should not call Harvest")
 
             // An entry with no time on it has nothing to give.
-            await state.moveTime(state.entry(withId: 2)!, hours: 1, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 2)!, hours: 1, projectId: 20, taskId: 200)
             expect(fake.calls.count == callsBefore, "an empty source should not call Harvest")
         }
     }
@@ -605,9 +605,9 @@ private func runMoveTimeStateTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.moveTime(state.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
+            await state.entries.moveTime(state.entries.entry(withId: 1)!, hours: 0.5, projectId: 20, taskId: 200)
             expect(
-                state.modifiedEntryIds(forDay: .now).contains(1),
+                state.timeline.modifiedEntryIds(forDay: .now).contains(1),
                 "the shrunk source should show as edited"
             )
         }
@@ -629,30 +629,30 @@ func runAFKLoopTests() async {
                 storageDirectory: directory,
                 idleSeconds: { 0 }
             )
-            state.onAFKDetected = { announced += 1 }
+            state.away.onDetected = { announced += 1 }
             await state.sync()
 
             state.afkTick()
-            expect(state.afkPrompt == nil, "no prompt while the keyboard is busy")
+            expect(state.away.prompt == nil, "no prompt while the keyboard is busy")
 
             // The prompt comes on the way back: input seen now, with a gap
             // since the input before it. Putting the last one in the past is
             // the same thing as having walked away for that long.
-            let away = Double(state.afkToleranceMinutes) * 60 + 60
-            state.lastActivityAt = Date.now.addingTimeInterval(-away)
+            let away = Double(state.away.toleranceMinutes) * 60 + 60
+            state.away.lastActivityAt = Date.now.addingTimeInterval(-away)
             state.afkTick()
-            expect(state.afkPrompt?.entryId == 1, "the running entry should be the one queried")
+            expect(state.away.prompt?.entryId == 1, "the running entry should be the one queried")
             expect(
-                state.afkPrompt.map { $0.duration >= away - 5 } == true,
-                "the prompt should cover the whole time away, got \(state.afkPrompt?.duration ?? -1)"
+                state.away.prompt.map { $0.duration >= away - 5 } == true,
+                "the prompt should cover the whole time away, got \(state.away.prompt?.duration ?? -1)"
             )
             expect(announced == 1, "the app should be told once, so it can show the window")
 
             state.afkTick()
             expect(announced == 1, "a prompt already up should not be announced again")
 
-            state.dismissAFKPrompt()
-            expect(state.afkPrompt == nil, "dismissing should clear it")
+            state.away.dismiss()
+            expect(state.away.prompt == nil, "dismissing should clear it")
         }
     }
 
@@ -673,10 +673,10 @@ func runAFKLoopTests() async {
             let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
             await state.sync()
 
-            let away = Double(state.afkToleranceMinutes) * 60 + 60
-            state.lastActivityAt = Date.now.addingTimeInterval(-away)
+            let away = Double(state.away.toleranceMinutes) * 60 + 60
+            state.away.lastActivityAt = Date.now.addingTimeInterval(-away)
             state.afkTick()
-            expect(state.afkPrompt == nil, "the break happened before the timer was on")
+            expect(state.away.prompt == nil, "the break happened before the timer was on")
         }
     }
 
@@ -700,10 +700,10 @@ func runAFKLoopTests() async {
 
             let awayStart = Date.now.addingTimeInterval(-60 * 60)
             let awayEnd = Date.now.addingTimeInterval(-10 * 60)
-            state.afkPrompt = AFKPrompt(entryId: 1, start: awayStart, end: awayEnd)
-            await state.removeAFKTime()
+            state.away.prompt = AFKPrompt(entryId: 1, start: awayStart, end: awayEnd)
+            await state.away.removeTime()
 
-            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            let blocks = state.timeline.blocks(forDay: .now).filter { $0.entryId == 1 }
             expect(blocks.count == 2, "the run should be cut in two, got \(blocks.count)")
             expect(
                 blocks.first.map { abs($0.end.timeIntervalSince(awayStart)) < 1 } == true,
@@ -716,11 +716,11 @@ func runAFKLoopTests() async {
             let breaks = TimelineBuilder.breaks(between: blocks)
             expect(breaks.count == 1, "the gap should draw as a break, got \(breaks.count)")
             expect(
-                !state.modifiedEntryIds(forDay: .now).contains(1),
+                !state.timeline.modifiedEntryIds(forDay: .now).contains(1),
                 "the entry's blocks still add up, so it should not be striped"
             )
             expect(
-                state.entry(withId: 1).map { abs($0.hours - (1.5 - 50.0 / 60)) < 0.01 } == true,
+                state.entries.entry(withId: 1).map { abs($0.hours - (1.5 - 50.0 / 60)) < 0.01 } == true,
                 "Harvest should lose the fifty minutes away"
             )
         }
@@ -746,14 +746,14 @@ func runAFKLoopTests() async {
                 ),
             ])
             let state = AppState(client: fake, storageDirectory: directory, idleSeconds: { 0 })
-            state.selectedDay = runStart
+            state.clock.selectedDay = runStart
             await state.sync()
             let log = EventLog(directory: directory)
             log.append(TimerEvent(entryId: 1, action: .start, timestamp: runStart, projectId: 10))
 
-            state.afkPrompt = AFKPrompt(entryId: 1, start: awayStart, end: awayEnd)
-            await state.removeAFKTime()
-            state.now = awayEnd.addingTimeInterval(30 * 60)
+            state.away.prompt = AFKPrompt(entryId: 1, start: awayStart, end: awayEnd)
+            await state.away.removeTime()
+            state.clock.now = awayEnd.addingTimeInterval(30 * 60)
 
             expect(
                 log.events(forDay: evening).allSatisfy { $0.timestamp < midnight },
@@ -764,7 +764,7 @@ func runAFKLoopTests() async {
                 "the morning should hold the start that picked the run back up"
             )
 
-            let eveningBlocks = state.timelineBlocks(forDay: runStart).filter { $0.entryId == 1 }
+            let eveningBlocks = state.timeline.blocks(forDay: runStart).filter { $0.entryId == 1 }
             expect(eveningBlocks.count == 1, "the evening ran once, got \(eveningBlocks.count) blocks")
             expect(
                 eveningBlocks.first.map { abs($0.end.timeIntervalSince(awayStart)) < 1 } == true,
@@ -775,7 +775,7 @@ func runAFKLoopTests() async {
                 "the night away is not a break in the evening"
             )
 
-            let morningBlocks = state.timelineBlocks(forDay: awayEnd).filter { $0.entryId == 1 }
+            let morningBlocks = state.timeline.blocks(forDay: awayEnd).filter { $0.entryId == 1 }
             expect(morningBlocks.count == 1, "the morning run should draw, got \(morningBlocks.count) blocks")
             expect(
                 morningBlocks.first.map { abs($0.start.timeIntervalSince(awayEnd)) < 1 } == true,
@@ -801,23 +801,23 @@ func runAFKLoopTests() async {
                 ),
             ])
             let state = AppState(client: fake, storageDirectory: directory)
-            state.selectedDay = Date.now.addingTimeInterval(-86_400)
+            state.clock.selectedDay = Date.now.addingTimeInterval(-86_400)
             await state.sync()
 
             await state.rollTimerIntoToday()
 
             expect(
-                state.entry(withId: 1).map { !$0.isRunning && abs($0.hours - 3) < 0.01 } == true,
+                state.entries.entry(withId: 1).map { !$0.isRunning && abs($0.hours - 3) < 0.01 } == true,
                 "yesterday's entry should stop where it stood at the handover"
             )
-            let carried = state.entries(forDay: .now).first { $0.isRunning }
+            let carried = state.entries.entries(forDay: .now).first { $0.isRunning }
             expect(carried != nil, "the clock should carry on today")
             expect(carried?.id != 1, "it should be a new entry, not yesterday's")
             expect(
                 carried.map { $0.project.id == 10 && $0.task.id == 100 && $0.notes == "overnight" } == true,
                 "the new entry should be the same work"
             )
-            expect(state.total(forDay: .now) < 0.1, "today should start from nothing, not yesterday's three hours")
+            expect(state.entries.total(forDay: .now) < 0.1, "today should start from nothing, not yesterday's three hours")
         }
     }
 
@@ -829,17 +829,17 @@ func runAFKLoopTests() async {
                 entry(id: 1, day: yesterday, hours: 3, project: 10, task: 100, running: true, startedAt: lastNight),
             ])
             let state = AppState(client: fake, storageDirectory: directory)
-            state.selectedDay = Date.now.addingTimeInterval(-86_400)
+            state.clock.selectedDay = Date.now.addingTimeInterval(-86_400)
             await state.sync()
-            state.afkPrompt = AFKPrompt(entryId: 1, start: lastNight, end: .now)
+            state.away.prompt = AFKPrompt(entryId: 1, start: lastNight, end: .now)
 
             await state.rollTimerIntoToday()
 
             expect(
-                state.entry(withId: 1)?.isRunning == true,
+                state.entries.entry(withId: 1)?.isRunning == true,
                 "how much of the night counts is the prompt's answer, so nothing should move yet"
             )
-            expect(state.entries(forDay: .now).isEmpty, "no entry should be made for today")
+            expect(state.entries.entries(forDay: .now).isEmpty, "no entry should be made for today")
         }
     }
 
@@ -850,16 +850,16 @@ func runAFKLoopTests() async {
                 entry(id: 1, day: yesterday, hours: 3, project: 10, task: 100, running: true, startedAt: .now),
             ])
             let state = AppState(client: fake, storageDirectory: directory)
-            state.selectedDay = Date.now.addingTimeInterval(-86_400)
+            state.clock.selectedDay = Date.now.addingTimeInterval(-86_400)
             await state.sync()
 
             await state.rollTimerIntoToday()
 
             expect(
-                state.entry(withId: 1)?.isRunning == true,
+                state.entries.entry(withId: 1)?.isRunning == true,
                 "its run began after midnight, so it never crossed one"
             )
-            expect(state.entries(forDay: .now).isEmpty, "backfilling a past day should not spawn a today entry")
+            expect(state.entries.entries(forDay: .now).isEmpty, "backfilling a past day should not spawn a today entry")
         }
     }
 
@@ -872,20 +872,20 @@ func runAFKLoopTests() async {
             await state.sync()
             _ = try await fake.updateHours(entryId: 1, hours: 0.5)
 
-            state.afkPrompt = AFKPrompt(
+            state.away.prompt = AFKPrompt(
                 entryId: 1,
                 start: Date.now.addingTimeInterval(-60 * 60),
                 end: Date.now.addingTimeInterval(-10 * 60)
             )
-            await state.keepAFKTime()
+            await state.away.keepTime()
 
-            expect(state.afkPrompt == nil, "keeping should close the prompt")
+            expect(state.away.prompt == nil, "keeping should close the prompt")
             expect(
                 fake.entry(1).map { abs($0.hours - 1.5) < 0.01 } == true,
                 "Harvest should get the timer's hours back, got \(fake.entry(1)?.hours ?? -1)"
             )
             expect(
-                state.modifiedEntryIds(forDay: .now).contains(1),
+                state.timeline.modifiedEntryIds(forDay: .now).contains(1),
                 "the re-saved hours should be logged as an edit"
             )
         }
@@ -901,14 +901,14 @@ func runAFKLoopTests() async {
             _ = try await fake.updateHours(entryId: 1, hours: 0.5)
             let callsBefore = fake.calls.count
 
-            state.afkPrompt = AFKPrompt(
+            state.away.prompt = AFKPrompt(
                 entryId: 1,
                 start: Date.now.addingTimeInterval(-60 * 60),
                 end: Date.now.addingTimeInterval(-10 * 60)
             )
-            state.dismissAFKPrompt()
+            state.away.dismiss()
 
-            expect(state.afkPrompt == nil, "dismissing should close the prompt")
+            expect(state.away.prompt == nil, "dismissing should close the prompt")
             expect(fake.calls.count == callsBefore, "dismissing should not call Harvest")
             expect(fake.entry(1)?.hours == 0.5, "the edit made elsewhere should stand")
         }
@@ -939,15 +939,15 @@ func runAFKLoopTests() async {
             )
             await state.sync()
 
-            state.lastActivityAt = Date.now.addingTimeInterval(-night)
+            state.away.lastActivityAt = Date.now.addingTimeInterval(-night)
             // The tick before this one ran before the lid closed, so this one
             // arrives a night late.
-            state.now = Date.now.addingTimeInterval(-night)
+            state.clock.now = Date.now.addingTimeInterval(-night)
             state.afkTick()
 
             expect(
-                state.afkPrompt.map { $0.duration >= night - 5 } == true,
-                "the whole night should count as away, got \(state.afkPrompt?.duration ?? -1)"
+                state.away.prompt.map { $0.duration >= night - 5 } == true,
+                "the whole night should count as away, got \(state.away.prompt?.duration ?? -1)"
             )
         }
     }
@@ -961,17 +961,17 @@ func runAFKLoopTests() async {
             await state.sync()
 
             let lastInput = Date.now.addingTimeInterval(-15 * 3600)
-            state.lastActivityAt = lastInput
-            state.now = Date.now.addingTimeInterval(-14 * 3600)
+            state.away.lastActivityAt = lastInput
+            state.clock.now = Date.now.addingTimeInterval(-14 * 3600)
             state.afkTick()
             expect(
-                state.lastActivityAt == lastInput,
+                state.away.lastActivityAt == lastInput,
                 "a maintenance wake should not pass for somebody at the keyboard"
             )
 
             state.afkTick()
             expect(
-                state.lastActivityAt > lastInput,
+                state.away.lastActivityAt > lastInput,
                 "a tick on its cadence should move the baseline on again"
             )
         }
@@ -1004,14 +1004,14 @@ func runAFKLoopTests() async {
             )
             await state.sync()
 
-            state.lastActivityAt = Date.now.addingTimeInterval(-55 * 60)
+            state.away.lastActivityAt = Date.now.addingTimeInterval(-55 * 60)
             watch.noteSleep(at: lidShut)
             watch.noteWake(at: .now)
             state.afkTick()
 
             expect(
-                state.afkPrompt.map { $0.duration >= night - 5 } == true,
-                "the sleep window should outrank the spoiled reading, got \(state.afkPrompt?.duration ?? -1)"
+                state.away.prompt.map { $0.duration >= night - 5 } == true,
+                "the sleep window should outrank the spoiled reading, got \(state.away.prompt?.duration ?? -1)"
             )
         }
     }
@@ -1042,14 +1042,14 @@ func runAFKLoopTests() async {
             watch.noteSleep(at: Date.now.addingTimeInterval(-3 * 3600))
             watch.noteWake(at: .now)
             state.afkTick()
-            let first = state.afkPrompt?.duration ?? 0
+            let first = state.away.prompt?.duration ?? 0
             expect(first >= 3 * 3600 - 5, "the first sleep should raise a prompt, got \(first)")
 
             watch.noteSleep(at: Date.now.addingTimeInterval(-30))
             watch.noteWake(at: .now)
             state.afkTick()
             expect(
-                state.afkPrompt.map { $0.duration > first } == true,
+                state.away.prompt.map { $0.duration > first } == true,
                 "the wait for an answer should be away time too"
             )
         }
@@ -1060,17 +1060,17 @@ func runAFKLoopTests() async {
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
             let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: .now)!
 
-            state.selectedDay = yesterday
-            state.windowDidOpen()
+            state.clock.selectedDay = yesterday
+            state.clock.windowDidOpen()
             expect(
-                Calendar.current.isDate(state.selectedDay, inSameDayAs: yesterday),
+                Calendar.current.isDate(state.clock.selectedDay, inSameDayAs: yesterday),
                 "a second open the same day should leave the chosen day alone"
             )
 
-            state.lastOpenedAt = yesterday
-            state.windowDidOpen()
+            state.clock.lastOpenedAt = yesterday
+            state.clock.windowDidOpen()
             expect(
-                Calendar.current.isDateInToday(state.selectedDay),
+                Calendar.current.isDateInToday(state.clock.selectedDay),
                 "the first open of a new day should jump to today"
             )
         }
@@ -1080,12 +1080,12 @@ func runAFKLoopTests() async {
         try await withTemporaryDirectory { directory in
             let fake = FakeHarvest()
             let state = AppState(client: fake, storageDirectory: directory)
-            expect(state.projectURL(for: 10) == nil, "before a sync the account's address is unknown")
+            expect(state.session.projectURL(for: 10) == nil, "before a sync the account's address is unknown")
 
             await state.sync()
             expect(
-                state.projectURL(for: 10) == URL(string: "https://testco.harvestapp.com/projects/10"),
-                "got \(String(describing: state.projectURL(for: 10)))"
+                state.session.projectURL(for: 10) == URL(string: "https://testco.harvestapp.com/projects/10"),
+                "got \(String(describing: state.session.projectURL(for: 10)))"
             )
 
             await state.sync()
@@ -1093,16 +1093,16 @@ func runAFKLoopTests() async {
             expect(fetches.count == 1, "the address should be asked for once, asked \(fetches.count) times")
 
             state.removeCredentials()
-            expect(state.projectURL(for: 10) == nil, "the address should go with the token")
+            expect(state.session.projectURL(for: 10) == nil, "the address should go with the token")
         }
     }
 
     await test("a turn of the AFK loop moves the clock on") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.now = .distantPast
+            state.clock.now = .distantPast
             state.afkTick()
-            expect(state.now.timeIntervalSinceNow > -1, "the tick should bring `now` up to date")
+            expect(state.clock.now.timeIntervalSinceNow > -1, "the tick should bring `now` up to date")
         }
     }
 }
@@ -1161,7 +1161,7 @@ func runTaskBudgetTests() async {
             ]
             let state = await syncedState(fake, directory: directory)
 
-            let line = state.budgetLine(for: fake.entry(1)!)
+            let line = state.budgets.line(for: fake.entry(1)!)
             expect(line?.summary == "Over budget by $915", "got \(line?.summary ?? "nil")")
             expect(line?.detail == "$915 over the $1,000 budget", "got \(line?.detail ?? "nil")")
         }
@@ -1183,7 +1183,7 @@ func runTaskBudgetTests() async {
             ]
             let state = await syncedState(fake, directory: directory)
 
-            let line = state.budgetLine(for: fake.entry(1)!)
+            let line = state.budgets.line(for: fake.entry(1)!)
             expect(line?.summary == "Budget remaining: $800 (80%)", "got \(line?.summary ?? "nil")")
         }
     }
@@ -1201,7 +1201,7 @@ func runTaskBudgetTests() async {
             ]
             let state = await syncedState(fake, directory: directory)
 
-            let line = state.budgetLine(for: fake.entry(1)!)
+            let line = state.budgets.line(for: fake.entry(1)!)
             expect(line?.summary == "Budget remaining: 2.5h (25%)", "got \(line?.summary ?? "nil")")
         }
     }
@@ -1216,7 +1216,7 @@ func runTaskBudgetTests() async {
             ]
             let state = await syncedState(fake, directory: directory)
 
-            let line = state.budgetLine(for: fake.entry(1)!)
+            let line = state.budgets.line(for: fake.entry(1)!)
             expect(line?.summary == "Budget remaining: $4.2k (42%)", "got \(line?.summary ?? "nil")")
             expect(
                 !fake.calls.contains { $0.hasPrefix("projectTimeEntries") },
@@ -1234,7 +1234,7 @@ func runTaskBudgetTests() async {
             fake.assignments = [taskBudgetedAssignment(project: 10, budgets: [100: 10])]
             let state = await syncedState(fake, directory: directory)
 
-            expect(state.budgetLine(for: fake.entry(1)!) == nil, "no task budget, no line")
+            expect(state.budgets.line(for: fake.entry(1)!) == nil, "no task budget, no line")
         }
     }
 
@@ -1246,7 +1246,7 @@ func runTaskBudgetTests() async {
             let state = await syncedState(fake, directory: directory)
             let before = fake.calls.filter { $0 == "projectBudgets" }.count
 
-            await state.startTimer(projectId: 10, taskId: 100)
+            await state.entries.startTimer(projectId: 10, taskId: 100)
 
             let after = fake.calls.filter { $0 == "projectBudgets" }.count
             expect(after > before, "the fresh start should not wait, got \(fake.calls)")
@@ -1263,16 +1263,16 @@ func runTaskBudgetTests() async {
             fake.projectHistory[10] = [entry(id: 2, day: today, hours: 5, project: 10, task: 100)]
             let state = await syncedState(fake, directory: directory)
             expect(
-                state.budgetLine(for: fake.entry(1)!)?.budget == 10,
+                state.budgets.line(for: fake.entry(1)!)?.budget == 10,
                 "the budget at launch"
             )
 
             fake.assignments = [taskBudgetedAssignment(project: 10, budgets: [100: 20])]
-            await state.startTimer(projectId: 10, taskId: 100)
+            await state.entries.startTimer(projectId: 10, taskId: 100)
 
             expect(
-                state.budgetLine(for: fake.entry(1)!)?.budget == 20,
-                "the raised budget should follow, got \(String(describing: state.budgetLine(for: fake.entry(1)!)))"
+                state.budgets.line(for: fake.entry(1)!)?.budget == 20,
+                "the raised budget should follow, got \(String(describing: state.budgets.line(for: fake.entry(1)!)))"
             )
         }
     }
@@ -1313,13 +1313,13 @@ func runTrimFromEndTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 15)
+            await state.entries.trimFromEnd(state.entries.entry(withId: 1)!, minutes: 15)
 
             expect(
                 fake.entry(1).map { abs($0.hours - 0.75) < 0.01 } == true,
                 "Harvest should lose the quarter hour, got \(fake.entry(1)?.hours ?? -1)"
             )
-            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            let blocks = state.timeline.blocks(forDay: .now).filter { $0.entryId == 1 }
             expect(blocks.count == 2, "the run should be cut in two, got \(blocks.count)")
             expect(
                 blocks.first.map { abs($0.end.timeIntervalSince(Date.now) + 15 * 60) < 5 } == true,
@@ -1328,7 +1328,7 @@ func runTrimFromEndTests() async {
             let breaks = TimelineBuilder.breaks(between: blocks)
             expect(breaks.count == 1, "the trimmed span should draw as a break, got \(breaks.count)")
             expect(
-                !state.modifiedEntryIds(forDay: .now).contains(1),
+                !state.timeline.modifiedEntryIds(forDay: .now).contains(1),
                 "the blocks still add up, so no stripe"
             )
         }
@@ -1347,20 +1347,20 @@ func runTrimFromEndTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 10)
+            await state.entries.trimFromEnd(state.entries.entry(withId: 1)!, minutes: 10)
 
             expect(
                 fake.entry(1).map { abs($0.hours - (1 - 10.0 / 60)) < 0.01 } == true,
                 "Harvest should lose the ten minutes, got \(fake.entry(1)?.hours ?? -1)"
             )
-            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            let blocks = state.timeline.blocks(forDay: .now).filter { $0.entryId == 1 }
             expect(blocks.count == 1, "the run should stay one block, got \(blocks.count)")
             expect(
                 blocks.first.map { abs($0.end.timeIntervalSince(runEnd) + 10 * 60) < 1 } == true,
                 "the block should end ten minutes earlier"
             )
             expect(
-                !state.modifiedEntryIds(forDay: .now).contains(1),
+                !state.timeline.modifiedEntryIds(forDay: .now).contains(1),
                 "the blocks still add up, so no stripe"
             )
         }
@@ -1379,13 +1379,13 @@ func runTrimFromEndTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 20)
+            await state.entries.trimFromEnd(state.entries.entry(withId: 1)!, minutes: 20)
 
             expect(
                 fake.entry(1).map { $0.hours == 0 } == true,
                 "the hours should floor at zero, got \(fake.entry(1)?.hours ?? -1)"
             )
-            let blocks = state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }
+            let blocks = state.timeline.blocks(forDay: .now).filter { $0.entryId == 1 }
             expect(
                 blocks.first.map { $0.end == $0.start } == true,
                 "the stop should clamp to where the run began"
@@ -1400,18 +1400,18 @@ func runTrimFromEndTests() async {
             ])
             let state = await syncedState(fake, directory: directory)
 
-            await state.trimFromEnd(state.entry(withId: 1)!, minutes: 15)
+            await state.entries.trimFromEnd(state.entries.entry(withId: 1)!, minutes: 15)
 
             expect(
                 fake.entry(1).map { abs($0.hours - 0.75) < 0.01 } == true,
                 "Harvest should still lose the quarter hour"
             )
             expect(
-                state.timelineBlocks(forDay: .now).filter { $0.entryId == 1 }.isEmpty,
+                state.timeline.blocks(forDay: .now).filter { $0.entryId == 1 }.isEmpty,
                 "there is no run to shorten"
             )
             expect(
-                state.modifiedEntryIds(forDay: .now).contains(1),
+                state.timeline.modifiedEntryIds(forDay: .now).contains(1),
                 "with no run to carve, the change marks the entry edited"
             )
         }
@@ -1442,7 +1442,7 @@ func runProjectBudgetTests() async {
             let fetches = fake.calls.filter { $0 == "projectBudgets" }
             expect(fetches.count == 1, "two syncs close together should fetch once, fetched \(fetches.count) times")
 
-            state.expireBudgets()
+            state.budgets.expire()
             await state.sync()
             let after = fake.calls.filter { $0 == "projectBudgets" }
             expect(after.count == 2, "past the interval a sync should fetch again, fetched \(after.count) times")
@@ -1455,7 +1455,7 @@ func runProjectBudgetTests() async {
             fake.budgetsError = HarvestAPIError.forbidden
             let state = await syncedState(fake, directory: directory)
             expect(state.budgets.isEmpty, "nothing should be shown")
-            expect(state.syncError == nil, "a missing role is not an error worth a banner")
+            expect(state.errors.message == nil, "a missing role is not an error worth a banner")
 
             await state.sync()
             let fetches = fake.calls.filter { $0 == "projectBudgets" }
@@ -1471,10 +1471,10 @@ func runProjectBudgetTests() async {
             expect(state.budgets[10] != nil, "the first fetch should land")
 
             fake.budgetsError = HarvestAPIError.network(URLError(.timedOut))
-            state.expireBudgets()
+            state.budgets.expire()
             await state.sync()
             expect(state.budgets[10] != nil, "a flaky fetch should not blank the bars")
-            expect(state.syncError == nil, "and should not raise the banner")
+            expect(state.errors.message == nil, "and should not raise the banner")
         }
     }
 
@@ -1557,12 +1557,12 @@ func runBreakTitleTests() async {
     await test("a break's title survives a restart") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.setBreakTitle("Lunch", forBreakId: "break-123")
-            expect(state.breakTitle(forBreakId: "break-123") == "Lunch", "the title should be there")
+            state.breaks.setTitle("Lunch", forBreakId: "break-123")
+            expect(state.breaks.title(forBreakId: "break-123") == "Lunch", "the title should be there")
 
             let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
             expect(
-                reopened.breakTitle(forBreakId: "break-123") == "Lunch",
+                reopened.breaks.title(forBreakId: "break-123") == "Lunch",
                 "it should be read back from disk"
             )
         }
@@ -1571,20 +1571,20 @@ func runBreakTitleTests() async {
     await test("a blank title takes the name away") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.setBreakTitle("Lunch", forBreakId: "break-123")
-            state.setBreakTitle("   ", forBreakId: "break-123")
-            expect(state.breakTitle(forBreakId: "break-123") == nil, "the title should be gone")
+            state.breaks.setTitle("Lunch", forBreakId: "break-123")
+            state.breaks.setTitle("   ", forBreakId: "break-123")
+            expect(state.breaks.title(forBreakId: "break-123") == nil, "the title should be gone")
 
             let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
-            expect(reopened.breakTitle(forBreakId: "break-123") == nil, "and stay gone on disk")
+            expect(reopened.breaks.title(forBreakId: "break-123") == nil, "and stay gone on disk")
         }
     }
 
     await test("a title is trimmed before it is kept") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.setBreakTitle("  Walk the dog  ", forBreakId: "break-9")
-            expect(state.breakTitle(forBreakId: "break-9") == "Walk the dog", "whitespace should go")
+            state.breaks.setTitle("  Walk the dog  ", forBreakId: "break-9")
+            expect(state.breaks.title(forBreakId: "break-9") == "Walk the dog", "whitespace should go")
         }
     }
 }
@@ -1603,13 +1603,13 @@ func runFavoritesTests() async {
     await test("favorites survive a restart") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.addFavorite(favorite)
+            state.favorites.add(favorite)
             expect(state.favorites.count == 1, "the favorite should be there")
 
             let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
-            expect(reopened.favorites == [favorite], "it should be read back from disk")
+            expect(reopened.favorites.all == [favorite], "it should be read back from disk")
 
-            reopened.removeFavorite(favorite)
+            reopened.favorites.remove(favorite)
             let again = AppState(client: FakeHarvest(), storageDirectory: directory)
             expect(again.favorites.isEmpty, "removing it should stick too")
         }
@@ -1618,16 +1618,16 @@ func runFavoritesTests() async {
     await test("toggling a favorite adds it, toggling again removes it") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            expect(!state.isFavorite(projectId: favorite.projectId, taskId: favorite.taskId), "nothing is a favorite yet")
+            expect(!state.favorites.contains(projectId: favorite.projectId, taskId: favorite.taskId), "nothing is a favorite yet")
 
-            state.toggleFavorite(favorite)
-            expect(state.favorites == [favorite], "the first toggle should add it")
-            expect(state.isFavorite(projectId: favorite.projectId, taskId: favorite.taskId), "it should now report as a favorite")
+            state.favorites.toggle(favorite)
+            expect(state.favorites.all == [favorite], "the first toggle should add it")
+            expect(state.favorites.contains(projectId: favorite.projectId, taskId: favorite.taskId), "it should now report as a favorite")
 
             let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
-            expect(reopened.favorites == [favorite], "the toggled favorite should survive a restart")
+            expect(reopened.favorites.all == [favorite], "the toggled favorite should survive a restart")
 
-            reopened.toggleFavorite(favorite)
+            reopened.favorites.toggle(favorite)
             expect(reopened.favorites.isEmpty, "the second toggle should remove it")
 
             let again = AppState(client: FakeHarvest(), storageDirectory: directory)
@@ -1649,8 +1649,8 @@ func runFavoritesTests() async {
     await test("the same favorite is not added twice, even after a rename") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.addFavorite(favorite)
-            state.addFavorite(favorite)
+            state.favorites.add(favorite)
+            state.favorites.add(favorite)
             expect(state.favorites.count == 1, "adding it again should do nothing")
 
             // Harvest renamed the project. It is the same project and task.
@@ -1661,10 +1661,10 @@ func runFavoritesTests() async {
                 projectName: "Project 10 — 2026 Maintenance",
                 taskName: favorite.taskName
             )
-            state.addFavorite(renamed)
+            state.favorites.add(renamed)
             expect(state.favorites.count == 1, "a rename should not make a second favorite")
 
-            state.removeFavorite(renamed)
+            state.favorites.remove(renamed)
             expect(state.favorites.isEmpty, "removing by the renamed copy should still work")
         }
     }
@@ -1679,20 +1679,20 @@ func runFavoritesTests() async {
                 taskName: "Development"
             )
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.addFavorite(favorite)
-            state.addFavorite(second)
+            state.favorites.add(favorite)
+            state.favorites.add(second)
 
-            state.moveFavorite(from: 0, to: 1)
-            expect(state.favorites == [second, favorite], "the chips should have swapped")
+            state.favorites.move(from: 0, to: 1)
+            expect(state.favorites.all == [second, favorite], "the chips should have swapped")
 
             let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
-            expect(reopened.favorites == [second, favorite], "the new order should be read back from disk")
+            expect(reopened.favorites.all == [second, favorite], "the new order should be read back from disk")
 
-            reopened.moveFavorite(from: 0, to: 0)
-            expect(reopened.favorites == [second, favorite], "moving a chip onto itself should change nothing")
+            reopened.favorites.move(from: 0, to: 0)
+            expect(reopened.favorites.all == [second, favorite], "moving a chip onto itself should change nothing")
 
-            reopened.moveFavorite(from: 0, to: 5)
-            expect(reopened.favorites == [second, favorite], "an index off the end should change nothing")
+            reopened.favorites.move(from: 0, to: 5)
+            expect(reopened.favorites.all == [second, favorite], "an index off the end should change nothing")
         }
     }
 
@@ -1706,19 +1706,19 @@ func runFavoritesTests() async {
                 taskName: "Development"
             )
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
-            state.addFavorite(favorite)
-            state.addFavorite(second)
+            state.favorites.add(favorite)
+            state.favorites.add(second)
 
             var edited = favorite
             edited.nickname = "Admin"
             edited.colorIndex = 3
-            state.updateFavorite(edited)
+            state.favorites.update(edited)
 
             let reopened = AppState(client: FakeHarvest(), storageDirectory: directory)
             expect(reopened.favorites.count == 2, "editing should not add or drop a favorite")
-            expect(reopened.favorites.first?.nickname == "Admin", "the nickname should be read back from disk")
-            expect(reopened.favorites.first?.colorIndex == 3, "the colour should be read back from disk")
-            expect(reopened.favorites.last == second, "the edited chip should have kept its place")
+            expect(reopened.favorites.all.first?.nickname == "Admin", "the nickname should be read back from disk")
+            expect(reopened.favorites.all.first?.colorIndex == 3, "the colour should be read back from disk")
+            expect(reopened.favorites.all.last == second, "the edited chip should have kept its place")
 
             let unknown = Favorite(
                 projectId: 99,
@@ -1728,7 +1728,7 @@ func runFavoritesTests() async {
                 taskName: "Development",
                 nickname: "Nope"
             )
-            reopened.updateFavorite(unknown)
+            reopened.favorites.update(unknown)
             expect(reopened.favorites.count == 2, "editing a favorite that is not there should do nothing")
         }
     }

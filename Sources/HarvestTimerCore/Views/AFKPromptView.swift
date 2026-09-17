@@ -6,14 +6,14 @@ struct AFKPromptView: View {
     @State private var loggingElsewhere = false
 
     private var timeGone: String { Hours.inWords(seconds: prompt.duration) }
-    private var entry: TimeEntry? { state.entry(withId: prompt.entryId) }
+    private var entry: TimeEntry? { state.entries.entry(withId: prompt.entryId) }
 
     var body: some View {
         VStack(spacing: 16) {
             HStack {
                 Spacer()
                 Button {
-                    state.dismissAFKPrompt()
+                    state.away.dismiss()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
@@ -43,7 +43,7 @@ struct AFKPromptView: View {
 
             VStack(spacing: 8) {
                 Button("Remove \(timeGone)") {
-                    Task { await state.removeAFKTime() }
+                    Task { await state.away.removeTime() }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -52,10 +52,10 @@ struct AFKPromptView: View {
                         loggingElsewhere = true
                     }
                     Button("Keep the time") {
-                        Task { await state.keepAFKTime() }
+                        Task { await state.away.keepTime() }
                     }
                     Button("Do nothing") {
-                        state.dismissAFKPrompt()
+                        state.away.dismiss()
                     }
                 }
             }
@@ -71,7 +71,7 @@ struct AFKPromptView: View {
                 actionLabel: "Log \(timeGone)"
             ) { assignment, task, _ in
                 Task {
-                    await state.moveAFKTime(projectId: assignment.project.id, taskId: task.id)
+                    await state.away.moveTime(projectId: assignment.project.id, taskId: task.id)
                 }
             }
         }
