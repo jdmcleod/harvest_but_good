@@ -350,7 +350,36 @@ public final class AppState {
     }
 
     public func startFavorite(_ favorite: Favorite) async {
-        await startTimer(projectId: favorite.projectId, taskId: favorite.taskId)
+        await addEntry(projectId: favorite.projectId, taskId: favorite.taskId)
+    }
+
+    /// Books work on the day being viewed. On today that means starting a
+    /// timer; on any other day it means an entry of no hours for the user to
+    /// fill in. A run is filed on the day its moments fall in, so a timer left
+    /// running for a day gone by would draw on today's timeline and nothing on
+    /// its own.
+    public func addEntry(projectId: Int64, taskId: Int64, notes: String? = nil) async {
+        if isViewingToday {
+            await startTimer(projectId: projectId, taskId: taskId, notes: notes)
+        } else {
+            await createEntry(on: Day(selectedDay), projectId: projectId, taskId: taskId, notes: notes)
+        }
+    }
+
+    private func createEntry(on day: Day, projectId: Int64, taskId: Int64, notes: String?) async {
+        let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        await perform { api in
+            let entry = try await api.createEntry(
+                projectId: projectId,
+                taskId: taskId,
+                spentDate: day,
+                hours: 0,
+                notes: notes
+            )
+            apply(entry)
+            selectedEntryId = entry.id
+            await sync()
+        }
     }
 
     public func startTimer(projectId: Int64, taskId: Int64, notes: String? = nil) async {

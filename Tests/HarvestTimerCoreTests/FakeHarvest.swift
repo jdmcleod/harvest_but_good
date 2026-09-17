@@ -96,7 +96,7 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
         hours: Double,
         notes: String?
     ) async throws -> TimeEntry {
-        try record("createEntry(project: \(projectId), task: \(taskId), hours: \(hours))")
+        try record("createEntry(project: \(projectId), task: \(taskId), day: \(spentDate), hours: \(hours))")
         nextId += 1
         let entry = TimeEntry(
             id: nextId,

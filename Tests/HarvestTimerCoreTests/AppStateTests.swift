@@ -182,6 +182,59 @@ func runAppStateTests() async {
         }
     }
 
+    await test("adding an entry while viewing another day books it on that day") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+            let fake = FakeHarvest()
+            let state = await syncedState(fake, directory: directory, selecting: yesterday)
+
+            await state.addEntry(projectId: 10, taskId: 100, notes: "backfill")
+            expect(
+                fake.calls.contains("createEntry(project: 10, task: 100, day: \(Day(yesterday)), hours: 0.0)"),
+                "expected an entry on the day being viewed, got \(fake.calls)"
+            )
+            expect(!fake.calls.contains { $0.hasPrefix("startTimer") }, "a day gone by gets no running timer")
+            expect(fake.runningEntry == nil, "nothing should be running")
+            expect(state.entries(forDay: yesterday).count == 1, "the entry should show on that day")
+            expect(state.entries(forDay: .now).isEmpty, "today should be left alone")
+        }
+    }
+
+    await test("adding an entry while viewing today starts a timer") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            let state = await syncedState(fake, directory: directory)
+
+            await state.addEntry(projectId: 10, taskId: 100)
+            expect(
+                fake.calls.contains("startTimer(project: 10, task: 100)"),
+                "today should still start a timer, got \(fake.calls)"
+            )
+            expect(fake.runningEntry?.project.id == 10, "the new entry should be running")
+        }
+    }
+
+    await test("a favorite tapped on another day lands on that day") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+            let fake = FakeHarvest()
+            let state = await syncedState(fake, directory: directory, selecting: yesterday)
+
+            await state.startFavorite(Favorite(
+                projectId: 10,
+                taskId: 100,
+                clientName: "Client",
+                projectName: "Project",
+                taskName: "Task"
+            ))
+            expect(
+                fake.calls.contains("createEntry(project: 10, task: 100, day: \(Day(yesterday)), hours: 0.0)"),
+                "expected the favorite on the day being viewed, got \(fake.calls)"
+            )
+            expect(fake.runningEntry == nil, "nothing should be running")
+        }
+    }
+
     await test("starting a timer that is already running opens a fresh entry instead") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
