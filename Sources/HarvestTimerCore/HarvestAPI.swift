@@ -90,6 +90,27 @@ public struct HarvestAPI: HarvestClient {
         return entries
     }
 
+    /// Every user's entries on one project, so per-task spend can be added
+    /// up. Harvest has no report that breaks a single project down by task.
+    public func projectTimeEntries(projectId: Int64) async throws -> [TimeEntry] {
+        var entries: [TimeEntry] = []
+        var page = 1
+        while true {
+            let result: TimeEntriesPage = try await get(
+                "time_entries",
+                query: [
+                    "project_id": String(projectId),
+                    "page": String(page),
+                    "per_page": "2000",
+                ]
+            )
+            entries.append(contentsOf: result.timeEntries)
+            guard let next = result.nextPage else { break }
+            page = next
+        }
+        return entries
+    }
+
     public func projectAssignments() async throws -> [ProjectAssignment] {
         var assignments: [ProjectAssignment] = []
         var page = 1

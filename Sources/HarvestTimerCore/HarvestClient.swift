@@ -10,6 +10,8 @@ public protocol HarvestClient {
     /// Budget vs. spent for every active project. Harvest only answers for
     /// administrators and project managers; everyone else draws a 403.
     func projectBudgets() async throws -> [ProjectBudget]
+    /// Every user's entries on one project, for adding up per-task spend.
+    func projectTimeEntries(projectId: Int64) async throws -> [TimeEntry]
     func startTimer(projectId: Int64, taskId: Int64, spentDate: Day, notes: String?) async throws -> TimeEntry
     func createEntry(
         projectId: Int64,

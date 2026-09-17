@@ -15,6 +15,10 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
     /// Unlike `failNextCall` this sticks, the way a role does: a token that
     /// cannot see budgets cannot see them on the next try either.
     var budgetsError: Error?
+    /// Stands in for the whole project's history, keyed by project id.
+    var projectHistory: [Int64: [TimeEntry]] = [:]
+    /// Set to hand back assignments other than the search fixtures.
+    var assignments: [ProjectAssignment]?
 
     init(entries: [TimeEntry] = []) {
         for entry in entries {
@@ -61,13 +65,18 @@ final class FakeHarvest: HarvestClient, @unchecked Sendable {
 
     func projectAssignments() async throws -> [ProjectAssignment] {
         try record("projectAssignments")
-        return searchFixtures
+        return assignments ?? searchFixtures
     }
 
     func projectBudgets() async throws -> [ProjectBudget] {
         try record("projectBudgets")
         if let budgetsError { throw budgetsError }
         return budgets
+    }
+
+    func projectTimeEntries(projectId: Int64) async throws -> [TimeEntry] {
+        try record("projectTimeEntries(\(projectId))")
+        return projectHistory[projectId] ?? []
     }
 
     func startTimer(projectId: Int64, taskId: Int64, spentDate: Day, notes: String?) async throws -> TimeEntry {
@@ -189,7 +198,8 @@ func entry(
     running: Bool = false,
     billable: Bool = false,
     notes: String? = nil,
-    startedAt: Date? = nil
+    startedAt: Date? = nil,
+    rate: Double? = nil
 ) -> TimeEntry {
     TimeEntry(
         id: id,
@@ -201,6 +211,7 @@ func entry(
         project: NamedRef(id: project, name: "Project \(project)"),
         task: NamedRef(id: task, name: "Task \(task)"),
         client: NamedRef(id: 1, name: "Client"),
-        timerStartedAt: startedAt
+        timerStartedAt: startedAt,
+        billableRate: rate
     )
 }

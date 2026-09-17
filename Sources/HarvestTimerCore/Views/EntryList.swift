@@ -156,12 +156,11 @@ private struct EntryCard: View {
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { editingProjectTask = true }
                         .help("Double-click to change project or task")
-                        if let budget = state.projectBudgets[entry.project.id],
-                           let summary = budget.remainingSummary {
-                            Text(summary)
+                        if let budget = state.budgetLine(for: entry) {
+                            Text(budget.summary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .help(budget.remainingDescription ?? "")
+                                .help(budget.detail)
                         }
                     }
                     Spacer()

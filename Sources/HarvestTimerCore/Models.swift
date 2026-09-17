@@ -23,6 +23,9 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
     public let task: NamedRef
     public let client: NamedRef
     public let timerStartedAt: Date?
+    /// What the entry bills at, for working out money spent per task. Harvest
+    /// leaves it out for users who may not see rates.
+    public let billableRate: Double?
 
     public init(
         id: Int64,
@@ -34,7 +37,8 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
         project: NamedRef,
         task: NamedRef,
         client: NamedRef,
-        timerStartedAt: Date? = nil
+        timerStartedAt: Date? = nil,
+        billableRate: Double? = nil
     ) {
         self.id = id
         self.spentDate = spentDate
@@ -46,6 +50,7 @@ public struct TimeEntry: Codable, Identifiable, Equatable {
         self.task = task
         self.client = client
         self.timerStartedAt = timerStartedAt
+        self.billableRate = billableRate
     }
 }
 
@@ -57,9 +62,13 @@ public struct TimeEntriesPage: Codable {
 public struct ProjectAssignment: Codable, Identifiable {
     public struct TaskAssignment: Codable {
         public let task: NamedRef
+        /// Hours or fees set aside for this task, on projects budgeted by
+        /// task. Nil on every other project.
+        public let budget: Double?
 
-        public init(task: NamedRef) {
+        public init(task: NamedRef, budget: Double? = nil) {
             self.task = task
+            self.budget = budget
         }
     }
 
@@ -78,6 +87,16 @@ public struct ProjectAssignment: Codable, Identifiable {
         self.project = project
         self.client = client
         self.taskAssignments = taskAssignments
+    }
+}
+
+extension ProjectAssignment {
+    /// Each task's own budget, by task id, skipping the tasks without one.
+    /// Only projects budgeted by task carry these.
+    public var taskBudgets: [Int64: Double] {
+        taskAssignments.reduce(into: [:]) { result, task in
+            if let budget = task.budget, budget > 0 { result[task.task.id] = budget }
+        }
     }
 }
 
@@ -115,51 +134,16 @@ public struct ProjectBudget: Codable, Equatable {
         budgetBy.contains("cost") || budgetBy.contains("fees")
     }
 
-    /// The card line: "Budget remaining: $4.2k (42%)", "Budget remaining:
-    /// 12.5h (31%)", or "Over budget by $500" once it is spent.
-    public var remainingSummary: String? {
-        guard let budget, budget > 0 else { return nil }
-        let remaining = budgetRemaining ?? (budget - (budgetSpent ?? 0))
-        if remaining < 0 {
-            return "Over budget by \(compact(-remaining))"
-        }
-        let percent = Int((remaining / budget * 100).rounded())
-        return "Budget remaining: \(compact(remaining)) (\(percent)%)"
-    }
+    /// True when each task carries its own budget, so the report's totals are
+    /// the whole project and say nothing about the task being timed.
+    public var budgetIsPerTask: Bool { budgetBy.hasPrefix("task") }
 
-    private func compact(_ value: Double) -> String {
-        guard budgetIsMonetary else { return amount(value) }
-        if value >= 1000 {
-            let thousands = (value / 100).rounded() / 10
-            let text = thousands == thousands.rounded()
-                ? String(format: "%.0f", thousands)
-                : String(format: "%.1f", thousands)
-            return "$\(text)k"
-        }
-        return "$\(Int(value.rounded()))"
-    }
-
-    /// "12.5h left of 40h", "$4,200 left of $10,000", or the "over" versions
-    /// once the budget is spent.
-    public var remainingDescription: String? {
-        guard let budget, budget > 0 else { return nil }
-        let remaining = budgetRemaining ?? (budget - (budgetSpent ?? 0))
-        if remaining < 0 {
-            return "\(amount(-remaining)) over the \(amount(budget)) budget"
-        }
-        return "\(amount(remaining)) left of \(amount(budget))"
-    }
-
-    private func amount(_ value: Double) -> String {
-        if budgetIsMonetary {
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.maximumFractionDigits = 0
-            formatter.locale = Locale(identifier: "en_US")
-            return "$" + (formatter.string(from: NSNumber(value: value)) ?? String(Int(value)))
-        }
-        let rounded = (value * 10).rounded() / 10
-        return String(format: rounded == rounded.rounded() ? "%.0fh" : "%.1fh", rounded)
+    public var line: BudgetLine? {
+        BudgetLine(
+            isMonetary: budgetIsMonetary,
+            budget: budget,
+            spent: budgetSpent ?? budget.map { $0 - (budgetRemaining ?? 0) }
+        )
     }
 }
 
