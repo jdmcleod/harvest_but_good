@@ -10,12 +10,12 @@ struct GoalFooter: View {
     @Environment(AppState.self) private var state
     let openSettings: () -> Void
 
-    private var day: Date { state.selectedDay }
+    private var day: Date { state.clock.selectedDay }
 
     // The divider lives inside, so switching goals off takes the separator
     // with the rest of the footer and the list above keeps its own edge.
     @ViewBuilder var body: some View {
-        if state.goalSettings.isEnabled {
+        if state.goals.isEnabled {
             VStack(spacing: 0) {
                 Divider()
                 if let progress = state.goalProgress(forDay: day) {
@@ -55,8 +55,8 @@ struct GoalFooter: View {
 
             // Only today can be skipped — `breakSkippedOn` holds one day at a
             // time — and only today has a finish time left to move.
-            if state.isToday(day) {
-                if let goal = state.goal(forDay: day), goal.breakHours > 0 {
+            if state.clock.isToday(day) {
+                if let goal = state.goals.goal(forDay: day), goal.breakHours > 0 {
                     breakChip(goal)
                 }
                 Spacer()
@@ -73,9 +73,9 @@ struct GoalFooter: View {
     /// the finish time sitting at the other end of the same row, which is the
     /// point of showing the two together.
     private func breakChip(_ goal: DayGoal) -> some View {
-        let skipped = state.isBreakSkipped(forDay: day)
+        let skipped = state.goals.isBreakSkipped(forDay: day)
         return Button {
-            state.toggleBreakSkip(forDay: day)
+            state.goals.toggleBreakSkip(forDay: day)
         } label: {
             Text("Break \(Hours.formatted(goal.breakHours))")
                 .font(.caption)
@@ -103,14 +103,14 @@ struct GoalFooter: View {
     }
 
     @ViewBuilder private func finish(_ progress: GoalProgress) -> some View {
-        if let finishAt = progress.finishTime(from: state.now) {
+        if let finishAt = progress.finishTime(from: state.clock.now) {
             let time = finishAt.formatted(date: .omitted, time: .shortened)
-            Text(state.runningEntry == nil ? "Done \(time)" : "Until \(time)")
+            Text(state.entries.running == nil ? "Done \(time)" : "Until \(time)")
                 .font(.callout.weight(.medium))
                 .monospacedDigit()
                 .foregroundStyle(Color.harvest)
                 .help(
-                    state.runningEntry == nil
+                    state.entries.running == nil
                         ? "When the day ends if you start now"
                         : "When the day ends if the timer runs on"
                 )

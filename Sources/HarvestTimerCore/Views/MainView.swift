@@ -11,7 +11,7 @@ struct MainView: View {
     @State private var showingSettings = false
 
     var body: some View {
-        @Bindable var state = state
+        @Bindable var away = state.away
         VStack(spacing: 0) {
             WeekHeader(showingSettings: $showingSettings)
                 .zIndex(1)
@@ -22,14 +22,14 @@ struct MainView: View {
                 DayTimelineView()
                     .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
             }
-            if let error = state.syncError {
+            if let error = state.errors.message {
                 ErrorBanner(message: error)
             }
         }
         .sheet(isPresented: $showingSettings) {
             SetupView(isSheet: true)
         }
-        .sheet(item: $state.afkPrompt) { prompt in
+        .sheet(item: $away.prompt) { prompt in
             AFKPromptView(prompt: prompt)
         }
         .task {

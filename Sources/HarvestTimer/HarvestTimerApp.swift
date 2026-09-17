@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hasRestoredFrame = window.setFrameUsingName("HarvestTimerMain")
         window.setFrameAutosaveName("HarvestTimerMain")
 
-        state.onAFKDetected = { [weak self] in self?.showWindow() }
+        state.away.onDetected = { [weak self] in self?.showWindow() }
         showWindow()
     }
 
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func showWindow() {
-        state.windowDidOpen()
+        state.clock.windowDidOpen()
         if !hasRestoredFrame {
             positionUnderStatusItem()
             hasRestoredFrame = true
@@ -180,7 +180,7 @@ private struct StatusWidget: View {
     @Environment(AppState.self) private var state
     let openWindow: () -> Void
 
-    private var isRunning: Bool { state.runningEntry != nil }
+    private var isRunning: Bool { state.entries.running != nil }
 
     /// The play/pause control, with today's progress standing in for the
     /// circle the glyph would otherwise draw around itself. One circle rather
@@ -242,7 +242,7 @@ private struct StatusWidget: View {
         // the glyph and the digits.
         HStack(spacing: 0) {
             Button {
-                Task { await state.toggleCurrentTimer() }
+                Task { await state.entries.toggleCurrentTimer() }
             } label: {
                 glyph
                 .frame(width: 16, height: 16)

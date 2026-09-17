@@ -17,7 +17,7 @@ struct FavoriteChips: View {
 
     var body: some View {
         HStack(spacing: FavoriteOrder.chipSpacing) {
-            ForEach(Array(state.favorites.enumerated()), id: \.element.id) { index, favorite in
+            ForEach(Array(state.favorites.all.enumerated()), id: \.element.id) { index, favorite in
                 FavoriteChip(
                     favorite: favorite,
                     index: index,
@@ -85,7 +85,7 @@ struct FavoriteChips: View {
         guard let drag = dragging else { return }
         dragging = nil
         withAnimation(.snappy(duration: 0.12)) {
-            state.moveFavorite(from: drag.from, to: drag.to)
+            state.favorites.move(from: drag.from, to: drag.to)
         }
     }
 }
@@ -123,7 +123,7 @@ private struct FavoriteChip: View {
     @State private var moved = false
 
     private var isRunning: Bool {
-        guard let running = state.runningEntry else { return false }
+        guard let running = state.entries.running else { return false }
         return running.project.id == favorite.projectId && running.task.id == favorite.taskId
     }
 
@@ -172,16 +172,16 @@ private struct FavoriteChip: View {
         .contextMenu {
             Button("Edit Favorite…", systemImage: "pencil", action: onEdit)
             Button("Move Left", systemImage: "arrow.left") {
-                state.moveFavorite(from: index, to: index - 1)
+                state.favorites.move(from: index, to: index - 1)
             }
             .disabled(index == 0)
             Button("Move Right", systemImage: "arrow.right") {
-                state.moveFavorite(from: index, to: index + 1)
+                state.favorites.move(from: index, to: index + 1)
             }
             .disabled(index >= count - 1)
             Divider()
             Button("Remove Favorite", systemImage: "trash", role: .destructive) {
-                state.removeFavorite(favorite)
+                state.favorites.remove(favorite)
             }
         }
     }

@@ -1,239 +1,108 @@
 import Foundation
 import Observation
 
+/// What the app is made of, and the two loops that drive it.
+///
+/// Every job of substance belongs to one of the parts below; this holds them
+/// together, wires the calls that cross between them, and owns the sync and
+/// AFK tickers. Views reach through it to the part they need.
 @MainActor
 @Observable
 public final class AppState {
-    var credentials: Keychain.Credentials?
-    public var selectedDay: Date = .now {
-        didSet { selectedEntryId = nil }
-    }
-    public var selectedEntryId: Int64?
-    /// Read it freely; changing it goes through the methods below, which also
-    /// keep the event log and Harvest in step.
-    public private(set) var book = EntryBook()
-    public var favorites: [Favorite] = []
-    public private(set) var breakTitles: [String: String] = [:]
-    public private(set) var goalSettings = GoalSettings()
-    var projectAssignments: [ProjectAssignment] = []
-    /// Budgets as they stand: project rows, per-task budgets, and the clock
-    /// that keeps them from being asked for on every sync.
-    public private(set) var budgets = BudgetBook()
-    public var now: Date = .now
-    public var lastSyncAt: Date = .now
-    public var syncError: String?
-    public var afkPrompt: AFKPrompt?
-    public var afkToleranceMinutes: Int {
-        didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
-    }
-    public var onAFKDetected: (() -> Void)?
+    public let session: Session
+    public let clock: Clock
+    public let errors = ErrorSink()
+    public let entries: EntryStore
+    public let timeline: Timeline
+    public let away: AwayWatch
+    public let favorites: FavoritesBook
+    public let goals: GoalBook
+    public let breaks: BreakTitleBook
+    public let assignments: AssignmentBook
+    public let budgets: BudgetBoard
 
-    private let idleSeconds: () -> TimeInterval
-    /// Internal, not private, so a test can post sleeps through it.
-    let sleepWatch: SleepWatch
-    /// The most recent input we have seen. Internal, not private, so a test
-    /// can put it in the past instead of waiting out a tolerance.
-    var lastActivityAt: Date = .now
-    /// The day the window was last brought to the front. Internal so a test
-    /// can put it in the past instead of waiting for midnight.
-    var lastOpenedAt: Date = .now
-    private static let afkToleranceKey = "afkToleranceMinutes"
-    private var currentUserId: Int64?
-    private var companyBaseUri: String?
-    private let weekCalendar = WeekCalendar()
-    private let eventLog: EventLog
-    private let favoritesStore: FavoritesStore
-    private let breakTitlesStore: BreakTitlesStore
-    private let goalsStore: GoalsStore
-    /// Set by tests, which stand in their own client rather than reach Harvest.
-    private let injectedClient: HarvestClient?
+    /// The entry the day view has the cursor on. Let go whenever the day
+    /// changes, since it belongs to the day it was picked on.
+    public var selectedEntryId: Int64?
+
     public static let syncInterval = Duration.seconds(30)
-    public static let afkInterval = Duration.seconds(10)
+    public static let afkInterval = AwayWatch.interval
     private let syncTicker = Ticker(every: AppState.syncInterval)
     private let afkTicker = Ticker(every: AppState.afkInterval)
 
-    var needsSetup: Bool { credentials == nil }
-
-    var api: HarvestClient? {
-        injectedClient ?? credentials.map { HarvestAPI(credentials: $0) }
-    }
-
-    public init(
+    public convenience init(
         idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds,
         sleepWatch: SleepWatch? = nil
     ) {
-        self.idleSeconds = idleSeconds
-        self.sleepWatch = sleepWatch ?? SleepWatch()
-        self.injectedClient = nil
-        self.eventLog = EventLog(directory: EventLog.defaultDirectory)
-        self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
-        self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
-        self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
-        afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
-        credentials = Keychain.shared.load()
-        favorites = favoritesStore.load()
-        breakTitles = breakTitlesStore.load()
-        goalSettings = goalsStore.load()
+        self.init(
+            session: Session(),
+            storageDirectory: EventLog.defaultDirectory,
+            idleSeconds: idleSeconds,
+            sleepWatch: sleepWatch ?? SleepWatch(),
+            toleranceMinutes: AwayWatch.storedTolerance
+        )
     }
 
     /// Builds a state that talks to `client` and keeps its files under
     /// `storageDirectory`, leaving the Keychain alone. Like the other init it
     /// starts no loops, so a test drives `sync` and `afkTick` itself.
-    public init(
+    public convenience init(
         client: HarvestClient,
         storageDirectory: URL,
         idleSeconds: @escaping () -> TimeInterval = { 0 },
         sleepWatch: SleepWatch? = nil
     ) {
-        self.idleSeconds = idleSeconds
-        // A centre of its own, so no real sleep reaches a test.
-        self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
-        self.injectedClient = client
-        self.eventLog = EventLog(directory: storageDirectory)
-        self.favoritesStore = FavoritesStore(directory: storageDirectory)
-        self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
-        self.goalsStore = GoalsStore(directory: storageDirectory)
-        afkToleranceMinutes = 10
-        favorites = favoritesStore.load()
-        breakTitles = breakTitlesStore.load()
-        goalSettings = goalsStore.load()
-    }
-
-    public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
-
-    /// Whether the day on screen is the one today falls in, so a control can
-    /// offer a way back only when there is somewhere to come back from. A day
-    /// earlier in this same week counts as somewhere else, so the way back is
-    /// on offer there too.
-    public var isViewingToday: Bool { isToday(selectedDay) }
-
-    /// Whether `day` is the one the clock is in. Goes through `now` rather than
-    /// the system clock so a test can move the day without waiting out a
-    /// midnight, and so a stale `now` never marks two days as today at once.
-    public func isToday(_ day: Date) -> Bool {
-        Calendar.current.isDate(day, inSameDayAs: now)
-    }
-
-    public func goToToday() {
-        selectedDay = now
-    }
-
-    public func entries(forDay day: Date) -> [TimeEntry] {
-        entries(onDate: Day(day))
-    }
-
-    public func entries(onDate date: Day) -> [TimeEntry] {
-        book.entries(on: date)
-    }
-
-    public var runningEntry: TimeEntry? {
-        book.running
-    }
-
-    public func liveHours(for entry: TimeEntry) -> Double {
-        guard entry.isRunning else { return entry.hours }
-        return entry.hours + max(0, now.timeIntervalSince(lastSyncAt)) / 3600
-    }
-
-    public func total(forDay day: Date) -> Double {
-        entries(forDay: day).reduce(0) { $0 + liveHours(for: $1) }
-    }
-
-    public var weekTotal: Double {
-        weekEntries.reduce(0) { $0 + liveHours(for: $1) }
-    }
-
-    public var weekBillableTotal: Double {
-        weekEntries.filter(\.billable).reduce(0) { $0 + liveHours(for: $1) }
-    }
-
-    private var weekEntries: [TimeEntry] {
-        weekDays.flatMap { entries(forDay: $0) }
-    }
-
-    public var menuBarTitle: String {
-        if let running = runningEntry {
-            return Hours.formatted(liveHours(for: running))
-        }
-        return Hours.formatted(total(forDay: .now))
-    }
-
-    /// The goal for the weekday `day` falls on, or nil for a day left blank.
-    public func goal(forDay day: Date) -> DayGoal? {
-        goalSettings.goal(for: Weekday(day))
-    }
-
-    /// Whether the break has been waved off for `day`. Yesterday's marker
-    /// simply stops matching, so nothing has to clear it.
-    public func isBreakSkipped(forDay day: Date) -> Bool {
-        goalSettings.breakSkippedOn == Day(day)
-    }
-
-    /// How much break the day has already had, taken from the gaps the
-    /// timeline finds between tracked blocks.
-    ///
-    /// A break under way right now is not a gap yet — a gap needs a block on
-    /// both sides — so the figure only catches up once the next timer starts.
-    public func breakTakenHours(forDay day: Date) -> Double {
-        let breaks = TimelineBuilder.breaks(between: timelineBlocks(forDay: day))
-        return breaks.reduce(0) { $0 + $1.duration } / 3600
-    }
-
-    /// How `day` stands against its goal, or nil when it has none.
-    public func goalProgress(forDay day: Date) -> GoalProgress? {
-        guard let goal = goal(forDay: day) else { return nil }
-        return GoalProgress(
-            goalHours: goal.hours,
-            workedHours: total(forDay: day),
-            breakAllowanceHours: goal.breakHours,
-            breakTakenHours: breakTakenHours(forDay: day),
-            breakSkipped: isBreakSkipped(forDay: day)
+        self.init(
+            session: Session(client: client),
+            storageDirectory: storageDirectory,
+            idleSeconds: idleSeconds,
+            // A centre of its own, so no real sleep reaches a test.
+            sleepWatch: sleepWatch ?? SleepWatch(center: NotificationCenter()),
+            toleranceMinutes: 10
         )
     }
 
-    /// Today against today's goal, for the menu bar — which shows the day the
-    /// clock is in, whichever day the window happens to be looking at.
-    public var todayGoalProgress: GoalProgress? {
-        goalProgress(forDay: now)
-    }
+    private init(
+        session: Session,
+        storageDirectory: URL,
+        idleSeconds: @escaping () -> TimeInterval,
+        sleepWatch: SleepWatch,
+        toleranceMinutes: Int
+    ) {
+        let log = EventLog(directory: storageDirectory)
+        let clock = Clock()
+        let errors = self.errors
+        let entries = EntryStore(log: log, session: session, errors: errors, clock: clock)
+        let assignments = AssignmentBook(session: session, errors: errors)
 
-    public func timelineBlocks(forDay day: Date) -> [TimelineBlock] {
-        let events = eventLog.events(forDay: Day(day))
-        return TimelineBuilder.blocks(
-            from: events,
-            now: now,
-            running: runningTimers(forDay: day, events: events)
+        self.session = session
+        self.clock = clock
+        self.entries = entries
+        self.timeline = Timeline(log: log, clock: clock, entries: entries)
+        self.assignments = assignments
+        self.budgets = BudgetBoard(session: session, assignments: assignments)
+        self.away = AwayWatch(
+            entries: entries,
+            idleSeconds: idleSeconds,
+            sleepWatch: sleepWatch,
+            toleranceMinutes: toleranceMinutes
         )
+        self.favorites = FavoritesBook(store: FavoritesStore(directory: storageDirectory))
+        self.goals = GoalBook(store: GoalsStore(directory: storageDirectory))
+        self.breaks = BreakTitleBook(store: BreakTitlesStore(directory: storageDirectory))
+
+        clock.onDayChange = { [weak self] in self?.selectedEntryId = nil }
+        entries.resync = { [weak self] in await self?.sync() }
+        entries.spendChanged = { [weak self] in await self?.refreshBudgets(force: true) }
+        entries.onCreate = { [weak self] id in self?.selectedEntryId = id }
     }
 
-    /// The timers to draw as still going on `day` — the day's own running
-    /// entries, and a timer that ran past midnight. Harvest keeps that one
-    /// booked against the day it began, but the rest of its run happened here,
-    /// so this day's timeline is where the rest belongs.
-    private func runningTimers(forDay day: Date, events: [TimerEvent]) -> [RunningTimer] {
-        var timers = entries(forDay: day).filter(\.isRunning)
-        if let running = runningEntry,
-           !timers.contains(where: { $0.id == running.id }),
-           events.contains(where: { $0.entryId == running.id }) {
-            timers.append(running)
-        }
-        return timers.map {
-            RunningTimer(entryId: $0.id, projectId: $0.project.id, startedAt: $0.timerStartedAt)
-        }
-    }
-
-    public func modifiedEntryIds(forDay day: Date) -> Set<Int64> {
-        TimelineBuilder.modifiedEntryIds(from: eventLog.events(forDay: Day(day)))
-    }
-
-    public func startCounts(forDay day: Date) -> [Int64: Int] {
-        TimelineBuilder.startCounts(from: eventLog.events(forDay: Day(day)))
-    }
+    // MARK: - The loops
 
     /// Starts the sync and AFK loops. Safe to call again; a second call
     /// replaces the running loops rather than adding to them.
     public func start() {
-        guard api != nil else { return }
+        guard session.client != nil else { return }
         syncTicker.start { [weak self] in
             await self?.sync()
             await self?.rollTimerIntoToday()
@@ -249,15 +118,24 @@ public final class AppState {
     /// One turn of the AFK loop: move the clock on, roll the view over if the
     /// day changed under it, then look for idleness.
     public func afkTick() {
-        let previousNow = now
-        now = .now
-        // Only follow the clock past midnight for someone still looking at
-        // what was today. Anyone browsing another day stays where they are.
-        if Calendar.current.isDate(selectedDay, inSameDayAs: previousNow),
-           !Calendar.current.isDate(now, inSameDayAs: previousNow) {
-            goToToday()
+        away.check(sinceLastTick: clock.tick())
+    }
+
+    public func sync() async {
+        var days = Set(clock.weekDays.map(Day.init))
+        days.formUnion(clock.currentWeek.map(Day.init))
+        let sorted = days.sorted()
+
+        guard let api = session.client else { return }
+        await errors.run {
+            let userId = try await session.resolveUserId(using: api)
+            try await session.resolveBaseUri(using: api)
+            let fetched = try await api.timeEntries(from: sorted.first!, to: sorted.last!, userId: userId)
+            clock.now = .now
+            entries.receive(days: clock.days(from: sorted.first!, to: sorted.last!), entries: fetched)
+            errors.clear()
         }
-        checkAFK(sinceLastTick: now.timeIntervalSince(previousNow))
+        await refreshBudgets()
     }
 
     /// Hands a timer that ran past midnight over to a fresh entry on the new
@@ -272,660 +150,85 @@ public final class AppState {
     /// one's. A past day's entry picked up again on purpose is left alone: its
     /// run began after midnight, so it never crossed one.
     public func rollTimerIntoToday() async {
-        guard afkPrompt == nil, let running = runningEntry else { return }
+        guard away.prompt == nil, let running = entries.running else { return }
         guard let startedAt = running.timerStartedAt,
-              running.spentDate < Day(now),
-              startedAt < Calendar.current.startOfDay(for: now) else { return }
-        await startTimer(
+              running.spentDate < Day(clock.now),
+              startedAt < Calendar.current.startOfDay(for: clock.now) else { return }
+        await entries.startTimer(
             projectId: running.project.id,
             taskId: running.task.id,
             notes: running.notes
         )
     }
 
-    /// Call when the window comes to the front. The first open of a calendar
-    /// day lands on today, wherever the app was left the day before; later
-    /// opens the same day leave the chosen day alone.
-    public func windowDidOpen() {
-        now = .now
-        if !Calendar.current.isDate(lastOpenedAt, inSameDayAs: now) {
-            goToToday()
+    // MARK: - What the whole app knows
+
+    /// Asks for the budget report, adding up task by task only for the
+    /// projects this week's entries sit on — as far as the report needs to
+    /// look, and each one costs a pass over its whole history.
+    private func refreshBudgets(force: Bool = false) async {
+        await budgets.refresh(force: force, spentOn: Set(entries.all.map(\.project.id)))
+    }
+
+    public var weekTotal: Double {
+        entries.total(forDays: clock.weekDays)
+    }
+
+    public var weekBillableTotal: Double {
+        entries.total(forDays: clock.weekDays, billableOnly: true)
+    }
+
+    public var menuBarTitle: String {
+        if let running = entries.running {
+            return Hours.formatted(entries.liveHours(for: running))
         }
-        lastOpenedAt = now
+        return Hours.formatted(entries.total(forDay: .now))
     }
 
-    public func sync() async {
-        var days = Set(weekDays.map(Day.init))
-        days.formUnion(weekCalendar.week(containing: .now).map(Day.init))
-
-        await perform { api in
-            let sortedDays = days.sorted()
-            let userId: Int64
-            if let currentUserId {
-                userId = currentUserId
-            } else {
-                userId = try await api.currentUser().id
-                currentUserId = userId
-            }
-            if companyBaseUri == nil {
-                companyBaseUri = try await api.company().baseUri
-            }
-            let entries = try await api.timeEntries(
-                from: sortedDays.first!,
-                to: sortedDays.last!,
-                userId: userId
-            )
-            now = .now
-            lastSyncAt = now
-            let previousRunning = runningEntry
-            book.replace(
-                weekCalendar.days(from: sortedDays.first!, to: sortedDays.last!),
-                with: entries
-            )
-            recordExternalTimerChange(from: previousRunning, to: runningEntry)
-            syncError = nil
-        }
-        await loadProjectBudgets()
-    }
-
-    /// Internal, so a test can put the last fetch in the past instead of
-    /// waiting out the refresh interval.
-    func expireBudgets() {
-        budgets.lastFetchAt = .distantPast
-    }
-
-    /// Fetches the budget report, at most once per refresh interval unless
-    /// `force` says otherwise. A 403 turns the feature off quietly; other
-    /// failures keep whatever was shown before.
-    func loadProjectBudgets(force: Bool = false) async {
-        guard let api, budgets.needsRefresh(force: force) else { return }
-        do {
-            budgets.received(try await api.projectBudgets())
-        } catch HarvestAPIError.forbidden {
-            budgets.refused()
-            return
-        } catch { return }
-        await loadTaskBudgets()
-    }
-
-    /// Fills in per-task budgets for the projects the week's entries sit on
-    /// that are budgeted by task. Only those projects, because each one costs
-    /// a pass over its whole time-entry history.
-    private func loadTaskBudgets() async {
-        let projectIds = budgets.perTaskProjects(among: Set(book.all.map(\.project.id)))
-        guard !projectIds.isEmpty else {
-            budgets.setTaskBudgets([:])
-            return
-        }
-        await loadProjectAssignments(force: true)
-        var built: [Int64: TaskBudgets] = [:]
-        for projectId in projectIds {
-            guard let budget = budgets[projectId] else { continue }
-            let amounts = projectAssignments
-                .first { $0.project.id == projectId }?
-                .taskBudgets ?? [:]
-            guard !amounts.isEmpty else { continue }
-            guard let entries = try? await api?.projectTimeEntries(projectId: projectId) else {
-                // Keep what we had rather than blank the line on one failure.
-                built[projectId] = budgets.taskBudgets(forProject: projectId)
-                continue
-            }
-            built[projectId] = TaskBudgets(
-                budgets: amounts,
-                entries: entries,
-                isMonetary: budget.budgetIsMonetary
-            )
-        }
-        budgets.setTaskBudgets(built)
-    }
-
-    /// The budget to draw on an entry's card.
-    public func budgetLine(for entry: TimeEntry) -> BudgetLine? {
-        budgets.line(for: entry)
+    /// Books work on the day being viewed.
+    public func addEntry(projectId: Int64, taskId: Int64, notes: String? = nil) async {
+        await entries.add(
+            on: clock.selectedDay,
+            isToday: clock.isViewingToday,
+            projectId: projectId,
+            taskId: taskId,
+            notes: notes
+        )
     }
 
     public func startFavorite(_ favorite: Favorite) async {
         await addEntry(projectId: favorite.projectId, taskId: favorite.taskId)
     }
 
-    /// Books work on the day being viewed. On today that means starting a
-    /// timer; on any other day it means an entry of no hours for the user to
-    /// fill in. A run is filed on the day its moments fall in, so a timer left
-    /// running for a day gone by would draw on today's timeline and nothing on
-    /// its own.
-    public func addEntry(projectId: Int64, taskId: Int64, notes: String? = nil) async {
-        if isViewingToday {
-            await startTimer(projectId: projectId, taskId: taskId, notes: notes)
-        } else {
-            await createEntry(on: Day(selectedDay), projectId: projectId, taskId: taskId, notes: notes)
-        }
-    }
-
-    private func createEntry(on day: Day, projectId: Int64, taskId: Int64, notes: String?) async {
-        let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        await perform { api in
-            let entry = try await api.createEntry(
-                projectId: projectId,
-                taskId: taskId,
-                spentDate: day,
-                hours: 0,
-                notes: notes
-            )
-            apply(entry)
-            selectedEntryId = entry.id
-            await sync()
-        }
-    }
-
-    public func startTimer(projectId: Int64, taskId: Int64, notes: String? = nil) async {
-        let today = Day(.now)
-        let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        await perform { api in
-            recordStopForRunningEntry()
-            let entry: TimeEntry
-            if let existing = entries(forDay: .now).first(where: {
-                !$0.isRunning && $0.project.id == projectId && $0.task.id == taskId && ($0.notes ?? "") == notes
-            }) {
-                entry = try await api.restart(entryId: existing.id)
-            } else {
-                entry = try await api.startTimer(
-                    projectId: projectId,
-                    taskId: taskId,
-                    spentDate: today,
-                    notes: notes
-                )
-            }
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .start, timestamp: .now, projectId: entry.project.id)
-            )
-            apply(entry)
-            await sync()
-            apply(entry)
-        }
-        await loadProjectBudgets(force: true)
-    }
-
-    public func toggle(_ entry: TimeEntry) async {
-        let current = currentVersion(of: entry)
-        await perform { api in
-            let updated: TimeEntry
-            if current.isRunning {
-                updated = try await api.stop(entryId: current.id)
-                eventLog.append(
-                    TimerEvent(entryId: current.id, action: .stop, timestamp: .now, projectId: current.project.id)
-                )
-            } else {
-                recordStopForRunningEntry()
-                updated = try await api.restart(entryId: current.id)
-                eventLog.append(
-                    TimerEvent(entryId: current.id, action: .start, timestamp: .now, projectId: current.project.id)
-                )
-            }
-            apply(updated)
-            await sync()
-            apply(updated)
-        }
-        if !current.isRunning { await loadProjectBudgets(force: true) }
-    }
-
-    public func toggleCurrentTimer() async {
-        if let running = runningEntry {
-            await toggle(running)
-        } else if let recent = lastStoppedEntry ?? entries(forDay: .now).last {
-            await toggle(recent)
-        }
-    }
-
-    /// What the clock was last on, which is rarely the last row of the list:
-    /// the list keeps Harvest's order, the event log keeps the day's. Skips
-    /// entries that have since gone, and falls back to the list for a day
-    /// whose timers all ran somewhere else.
-    private var lastStoppedEntry: TimeEntry? {
-        let today = entries(forDay: .now)
-        // The log keeps whole seconds, so stopping one timer to start another
-        // writes two events on the same second. The later line breaks the tie.
-        let stops = eventLog.events(forDay: Day(.now))
-            .enumerated()
-            .filter { $0.element.action == .stop }
-            .sorted { ($0.element.timestamp, $0.offset) > ($1.element.timestamp, $1.offset) }
-        return stops.lazy
-            .compactMap { stop in today.first { $0.id == stop.element.entryId } }
-            .first
-    }
-
-    public func saveNotes(_ entry: TimeEntry, notes: String) async {
-        guard notes != (entry.notes ?? "") else { return }
-        await perform { api in
-            apply(try await api.updateNotes(entryId: entry.id, notes: notes))
-        }
-    }
-
-    public func updateHours(_ entry: TimeEntry, hours: Double) async {
-        await perform { api in
-            let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            logEdit(updated)
-            apply(updated)
-        }
-    }
-
-    public func updateProjectTask(_ entry: TimeEntry, projectId: Int64, taskId: Int64) async {
-        guard entry.project.id != projectId || entry.task.id != taskId else { return }
-        await perform { api in
-            let updated = try await api.updateProjectTask(
-                entryId: entry.id,
-                projectId: projectId,
-                taskId: taskId
-            )
-            logEdit(updated)
-            apply(updated)
-        }
-    }
-
-    /// Takes `hours` off one entry and puts them on another, on the same day.
-    /// `destinationEntryId` picks an exact entry — the only way to reach one
-    /// that shares the source's project and task and differs just by notes;
-    /// without it the move merges into any entry matching the project and
-    /// task, or creates one. A running timer keeps running: on the source if
-    /// time is left on it, otherwise on the destination it just moved to.
-    public func moveTime(
-        _ entry: TimeEntry,
-        hours: Double,
-        projectId: Int64,
-        taskId: Int64,
-        destinationEntryId: Int64? = nil
-    ) async {
-        var source = currentVersion(of: entry)
-        guard hours > 0, liveHours(for: source) > 0 else { return }
-        if let destinationEntryId {
-            guard destinationEntryId != source.id else { return }
-        } else {
-            guard projectId != source.project.id || taskId != source.task.id else { return }
-        }
-        let wasRunning = source.isRunning
-
-        await perform { api in
-            if wasRunning {
-                // Stop first so the split works off a settled number rather
-                // than one still climbing.
-                recordStopForRunningEntry()
-                source = try await api.stop(entryId: source.id)
-                apply(source)
-            }
-            guard let plan = TimeMove.plan(sourceHours: source.hours, requested: hours) else { return }
-            let destination = entries(onDate: source.spentDate).first {
-                if let destinationEntryId { return $0.id == destinationEntryId }
-                return $0.project.id == projectId && $0.task.id == taskId
-            }
-            let landedOn: TimeEntry
-            if let destination {
-                let updated = try await api.updateHours(
-                    entryId: destination.id,
-                    hours: destination.hours + plan.moved
-                )
-                logEdit(updated)
-                apply(updated)
-                landedOn = updated
-            } else {
-                let created = try await api.createEntry(
-                    projectId: projectId,
-                    taskId: taskId,
-                    spentDate: source.spentDate,
-                    hours: plan.moved,
-                    notes: source.notes
-                )
-                apply(created)
-                landedOn = created
-            }
-
-            if plan.emptiesSource {
-                await deleteEntry(source)
-            } else {
-                await updateHours(source, hours: plan.remaining)
-            }
-
-            if wasRunning {
-                await restartTimer(on: plan.emptiesSource ? landedOn : source)
-            }
-            await sync()
-        }
-    }
-
-    /// Cuts `minutes` off the end of an entry's last run and leaves the gap
-    /// to draw as a break: the timer really ran, the tail just wasn't work.
-    public func trimFromEnd(_ entry: TimeEntry, minutes: Int) async {
-        let current = currentVersion(of: entry)
-        let cut = TimeInterval(minutes) * 60
-        guard cut > 0, liveHours(for: current) > 0 else { return }
-        let hours = max(0, liveHours(for: current) - cut / 3600)
-        await perform { api in
-            let updated = try await api.updateHours(entryId: current.id, hours: hours)
-            logTrimBreak(on: current, cut: cut)
-            apply(updated)
-            await sync()
-        }
-    }
-
-    /// Moves the end of the entry's last run back by `cut` rather than
-    /// marking it edited, so the span comes off as a break, not a stripe.
-    /// The builder takes the earliest stop it meets, so the stop already in
-    /// the log just stops closing anything. A running timer also starts
-    /// again now, the same shape an AFK break leaves. An entry with no local
-    /// run — started elsewhere — has no end to move, so it gets the stripe.
-    private func logTrimBreak(on entry: TimeEntry, cut: TimeInterval) {
-        let moment = Date.now
-        let running = entry.isRunning
-            ? [RunningTimer(entryId: entry.id, projectId: entry.project.id, startedAt: entry.timerStartedAt)]
-            : []
-        let blocks = TimelineBuilder.blocks(
-            from: eventLog.events(forDay: entry.spentDate),
-            now: moment,
-            running: running
-        ).filter { $0.entryId == entry.id }
-        guard let block = blocks.max(by: { $0.end < $1.end }) else {
-            logEdit(entry)
-            return
-        }
-        eventLog.append(
-            TimerEvent(
-                entryId: entry.id,
-                action: .stop,
-                timestamp: max(block.start, block.end.addingTimeInterval(-cut)),
-                projectId: entry.project.id
-            )
-        )
-        if entry.isRunning {
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .start, timestamp: moment, projectId: entry.project.id)
-            )
-        }
-    }
-
-    /// Picks a stopped entry's timer back up, keeping its notes — unlike
-    /// `startTimer`, which matches on empty notes and would leave a noted
-    /// entry behind for a fresh unnamed copy.
-    private func restartTimer(on entry: TimeEntry) async {
-        await perform { api in
-            let restarted = try await api.restart(entryId: entry.id)
-            eventLog.append(
-                TimerEvent(
-                    entryId: restarted.id,
-                    action: .start,
-                    timestamp: .now,
-                    projectId: restarted.project.id
-                )
-            )
-            apply(restarted)
-        }
-        await loadProjectBudgets(force: true)
-    }
-
-    /// Notes that an entry's duration or booking changed, so the timeline can
-    /// stripe it — its blocks no longer add up to its hours.
-    private func logEdit(_ entry: TimeEntry) {
-        eventLog.append(
-            TimerEvent(entryId: entry.id, action: .edit, timestamp: .now, projectId: entry.project.id),
-            day: entry.spentDate
+    /// How `day` stands against its goal, or nil when it has none.
+    public func goalProgress(forDay day: Date) -> GoalProgress? {
+        goals.progress(
+            forDay: day,
+            worked: entries.total(forDay: day),
+            breakTaken: timeline.breakTakenHours(forDay: day)
         )
     }
 
-    public func deleteEntry(_ entry: TimeEntry) async {
-        await perform { api in
-            try await api.deleteEntry(entryId: entry.id)
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .delete, timestamp: .now, projectId: entry.project.id),
-                day: entry.spentDate
-            )
-            book.remove(entry)
-        }
+    /// Today against today's goal, for the menu bar — which shows the day the
+    /// clock is in, whichever day the window happens to be looking at.
+    public var todayGoalProgress: GoalProgress? {
+        goalProgress(forDay: clock.now)
     }
 
-    public func entry(withId id: Int64) -> TimeEntry? {
-        book.entry(withId: id)
-    }
-
-    public func dismissAFKPrompt() {
-        afkPrompt = nil
-    }
-
-    /// Stands by the time the timer ran: the hours as this app sees them go
-    /// back to Harvest, so they win over an adjustment made elsewhere while
-    /// away, and the edit is logged like any other. Dismissing instead leaves
-    /// Harvest alone, so that adjustment stays.
-    public func keepAFKTime() async {
-        guard let prompt = afkPrompt else { return }
-        afkPrompt = nil
-        guard let entry = entry(withId: prompt.entryId) else { return }
-        await updateHours(entry, hours: liveHours(for: entry))
-    }
-
-    /// Takes the away time off the entry that was running and puts it on
-    /// another project and task instead.
-    public func moveAFKTime(projectId: Int64, taskId: Int64) async {
-        guard let prompt = afkPrompt, let entry = entry(withId: prompt.entryId) else { return }
-        afkPrompt = nil
-        await moveTime(entry, hours: prompt.duration / 3600, projectId: projectId, taskId: taskId)
-    }
-
-    public func removeAFKTime() async {
-        guard let prompt = afkPrompt else { return }
-        afkPrompt = nil
-        guard let entry = entry(withId: prompt.entryId) else { return }
-        let hours = max(0, liveHours(for: entry) - prompt.duration / 3600)
-        await perform { api in
-            let updated = try await api.updateHours(entryId: entry.id, hours: hours)
-            logAFKBreak(prompt, on: updated)
-            apply(updated)
-            await sync()
-        }
-    }
-
-    /// Cuts the away time out of the entry's run on the timeline rather than
-    /// marking it edited: the timer stopped when the desk emptied and picked up
-    /// again on the way back, so the log says exactly that and the gap draws as
-    /// a break. The hours still match the blocks, so no stripe is warranted.
-    private func logAFKBreak(_ prompt: AFKPrompt, on entry: TimeEntry) {
-        eventLog.append(
-            TimerEvent(entryId: entry.id, action: .stop, timestamp: prompt.start, projectId: entry.project.id)
-        )
-        eventLog.append(
-            TimerEvent(entryId: entry.id, action: .start, timestamp: prompt.end, projectId: entry.project.id)
-        )
-    }
-
-    private func checkAFK(sinceLastTick: TimeInterval) {
-        // The tick gap is the fallback for what macOS did not report: a
-        // suspended process, or a missed notification.
-        let sleep = sleepWatch.takePendingSleep()
-        let slept = sleep != nil || !AFKDetector.trustsIdleReading(
-            sinceLastTick: sinceLastTick,
-            interval: Self.afkInterval.timeInterval
-        )
-        // Nobody typed after the lid shut. `min` repairs a bad reading already
-        // stored, which `max` below can never undo.
-        if let sleep {
-            lastActivityAt = min(lastActivityAt, sleep.start)
-        }
-        let currentActivity = slept ? Date.now : Date.now.addingTimeInterval(-idleSeconds())
-        let updated = AFKDetector.evaluate(
-            prompt: afkPrompt,
-            lastActivity: lastActivityAt,
-            currentActivity: currentActivity,
-            toleranceSeconds: Double(afkToleranceMinutes) * 60,
-            runningEntryId: runningEntry?.id,
-            runningEntryStartedAt: runningEntry?.timerStartedAt,
-            sleptSinceLastCheck: slept
-        )
-        if !slept {
-            lastActivityAt = max(lastActivityAt, currentActivity)
-        }
-        let isNew = updated != nil && afkPrompt == nil
-        afkPrompt = updated
-        if isNew { onAFKDetected?() }
-    }
-
-    /// The project's page on the Harvest site, once a sync has learned where
-    /// the account lives.
-    public func projectURL(for projectId: Int64) -> URL? {
-        companyBaseUri.flatMap { URL(string: "\($0)/projects/\(projectId)") }
-    }
-
-    /// Loads the assignments once, or again when `force` says to: task
-    /// budgets live on them, and one added in Harvest mid-session would
-    /// otherwise never show up.
-    func loadProjectAssignments(force: Bool = false) async {
-        guard force || projectAssignments.isEmpty else { return }
-        await perform { api in
-            projectAssignments = try await api.projectAssignments()
-        }
-    }
-
-    public func breakTitle(forBreakId id: String) -> String? {
-        breakTitles[id]
-    }
-
-    /// Names a break on the timeline. A blank title takes the name away.
-    public func setBreakTitle(_ title: String, forBreakId id: String) {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            breakTitles.removeValue(forKey: id)
-        } else {
-            breakTitles[id] = trimmed
-        }
-        breakTitlesStore.save(breakTitles)
-    }
-
-    /// Turns the whole goals feature on or off. The days keep their goals
-    /// either way, so switching back on picks up where it left off.
-    public func setGoalsEnabled(_ enabled: Bool) {
-        goalSettings.isEnabled = enabled
-        goalsStore.save(goalSettings)
-    }
-
-    /// Sets the goal for a weekday. Hours of nothing leaves the day unset
-    /// rather than storing a goal of zero.
-    public func setGoal(hours: Double, breakHours: Double, for weekday: Weekday) {
-        if hours > 0 {
-            goalSettings.days[weekday] = DayGoal(hours: hours, breakHours: max(0, breakHours))
-        } else {
-            goalSettings.days.removeValue(forKey: weekday)
-        }
-        goalsStore.save(goalSettings)
-    }
-
-    /// Waves today's break off, or puts it back.
-    public func toggleBreakSkip(forDay day: Date) {
-        goalSettings.breakSkippedOn = isBreakSkipped(forDay: day) ? nil : Day(day)
-        goalsStore.save(goalSettings)
-    }
-
-    public func addFavorite(_ favorite: Favorite) {
-        // Matched by id, not by every field: a project renamed in Harvest is
-        // still the same favorite.
-        guard !favorites.contains(where: { $0.id == favorite.id }) else { return }
-        favorites.append(favorite)
-        favoritesStore.save(favorites)
-    }
-
-    public func removeFavorite(_ favorite: Favorite) {
-        favorites.removeAll { $0.id == favorite.id }
-        favoritesStore.save(favorites)
-    }
-
-    public func isFavorite(projectId: Int64, taskId: Int64) -> Bool {
-        favorites.contains { $0.projectId == projectId && $0.taskId == taskId }
-    }
-
-    public func toggleFavorite(_ favorite: Favorite) {
-        if favorites.contains(where: { $0.id == favorite.id }) {
-            removeFavorite(favorite)
-        } else {
-            addFavorite(favorite)
-        }
-    }
-
-    public func moveFavorite(from: Int, to: Int) {
-        let reordered = FavoriteOrder.moving(favorites, from: from, to: to)
-        guard reordered != favorites else { return }
-        favorites = reordered
-        favoritesStore.save(favorites)
-    }
-
-    public func updateFavorite(_ favorite: Favorite) {
-        guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
-        guard favorites[index] != favorite else { return }
-        favorites[index] = favorite
-        favoritesStore.save(favorites)
-    }
+    // MARK: - Credentials
 
     func saveCredentials(token: String, accountId: String) throws {
-        let credentials = Keychain.Credentials(token: token, accountId: accountId)
-        try Keychain.shared.save(credentials)
-        self.credentials = credentials
-        currentUserId = nil
-        companyBaseUri = nil
+        try session.save(token: token, accountId: accountId)
         budgets.clear()
         start()
     }
 
     func removeCredentials() {
-        Keychain.shared.clear()
-        credentials = nil
-        currentUserId = nil
-        companyBaseUri = nil
-        book.removeAll()
-        projectAssignments = []
+        session.clear()
+        entries.removeAll()
+        assignments.removeAll()
         budgets.clear()
-        afkPrompt = nil
+        away.clear()
         stop()
-    }
-
-    /// Runs `work` against Harvest, putting any failure in the error banner.
-    /// Does nothing when there are no credentials yet.
-    private func perform(_ work: (HarvestClient) async throws -> Void) async {
-        guard let api else { return }
-        do {
-            try await work(api)
-        } catch {
-            syncError = error.localizedDescription
-        }
-    }
-
-    private func currentVersion(of entry: TimeEntry) -> TimeEntry {
-        book.currentVersion(of: entry)
-    }
-
-    /// Files an entry Harvest just handed back. The clock restarts with it, so
-    /// a running entry counts up from the hours Harvest reported rather than
-    /// from the last sync.
-    private func apply(_ updated: TimeEntry) {
-        now = .now
-        lastSyncAt = now
-        book.apply(updated)
-    }
-
-    private func recordExternalTimerChange(from previous: TimeEntry?, to current: TimeEntry?) {
-        guard previous?.id != current?.id else { return }
-        if let previous {
-            eventLog.append(
-                TimerEvent(entryId: previous.id, action: .stop, timestamp: now, projectId: previous.project.id)
-            )
-        }
-        if let current {
-            eventLog.append(
-                TimerEvent(
-                    entryId: current.id,
-                    action: .start,
-                    timestamp: current.timerStartedAt ?? now,
-                    projectId: current.project.id
-                )
-            )
-        }
-    }
-
-    private func recordStopForRunningEntry() {
-        guard let running = runningEntry else { return }
-        eventLog.append(
-            TimerEvent(entryId: running.id, action: .stop, timestamp: .now, projectId: running.project.id)
-        )
     }
 }

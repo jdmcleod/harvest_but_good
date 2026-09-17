@@ -7,7 +7,7 @@ public struct RootView: View {
 
     public var body: some View {
         Group {
-            if state.needsSetup {
+            if state.session.needsSetup {
                 SetupView()
             } else {
                 MainView()

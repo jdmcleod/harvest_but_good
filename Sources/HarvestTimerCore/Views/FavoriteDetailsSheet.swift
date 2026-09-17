@@ -138,9 +138,9 @@ struct FavoriteDetailsSheet: View {
 
     private func save() {
         if isNew {
-            state.addFavorite(preview)
+            state.favorites.add(preview)
         } else {
-            state.updateFavorite(preview)
+            state.favorites.update(preview)
         }
         dismiss()
     }

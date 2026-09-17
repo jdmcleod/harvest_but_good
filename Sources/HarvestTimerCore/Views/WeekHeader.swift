@@ -15,7 +15,7 @@ struct WeekHeader: View {
             .pointingCursor()
 
             HStack(spacing: 3) {
-                ForEach(state.weekDays, id: \.self) { day in
+                ForEach(state.clock.weekDays, id: \.self) { day in
                     DayTab(day: day)
                 }
             }
@@ -52,10 +52,10 @@ struct WeekHeader: View {
     }
 
     private func shiftWeek(by weeks: Int) {
-        state.selectedDay = Calendar.current.date(
+        state.clock.selectedDay = Calendar.current.date(
             byAdding: .day,
             value: weeks * 7,
-            to: state.selectedDay
+            to: state.clock.selectedDay
         )!
         Task { await state.sync() }
     }
@@ -66,11 +66,11 @@ private struct DayTab: View {
     let day: Date
 
     private var isSelected: Bool {
-        Calendar.current.isDate(day, inSameDayAs: state.selectedDay)
+        Calendar.current.isDate(day, inSameDayAs: state.clock.selectedDay)
     }
 
     private var isToday: Bool {
-        state.isToday(day)
+        state.clock.isToday(day)
     }
 
     /// Selection is the solid border; today keeps a fainter one of its own so
@@ -84,13 +84,13 @@ private struct DayTab: View {
 
     var body: some View {
         Button {
-            state.selectedDay = day
+            state.clock.selectedDay = day
         } label: {
             VStack(spacing: 2) {
                 Text(day.formatted(.dateTime.weekday(.abbreviated)))
                     .font(.caption)
                     .foregroundStyle(isToday ? .white : .white.opacity(0.7))
-                Text(Hours.formatted(state.total(forDay: day)))
+                Text(Hours.formatted(state.entries.total(forDay: day)))
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
             }

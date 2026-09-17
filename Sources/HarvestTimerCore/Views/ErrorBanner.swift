@@ -13,7 +13,7 @@ struct ErrorBanner: View {
                 .font(.callout)
             Spacer()
             Button {
-                state.syncError = nil
+                state.errors.message = nil
             } label: {
                 Image(systemName: "xmark")
             }
