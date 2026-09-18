@@ -22,12 +22,16 @@ looking at.
 
 Three targets in one SwiftPM package (`Package.swift`, Swift 5 language mode):
 
-- `HarvestTimerCore` — everything: models, API, storage, and the SwiftUI views under `Views/`.
+- `HarvestTimerCore` — everything, grouped by kind: `State/` (the observable objects the
+  app is made of), `Storage/` (the files and the Keychain), `Harvest/` (the API, its
+  protocol, and the models), `Views/` (SwiftUI).
 - `HarvestTimer` — the executable. `HarvestTimerApp.swift` is an `AppDelegate` that builds the
   status item and window by hand, not a SwiftUI `App`. It owns the one `AppState`.
 - `HarvestTimerCoreTests` — swift-testing, not XCTest.
 
-Views are small and stay in `Views/`.
+Views are small and stay in `Views/`. The value types and the small decision-only pieces
+sit flat at the top of the target — they belong to no one layer, and a flat list reads
+better than a folder of three files.
 
 ## Architecture
 
