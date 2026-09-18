@@ -26,15 +26,22 @@ public struct GoalSettings: Codable, Equatable, Sendable {
     /// The day whose break was waved off. A `Day` rather than a flag so it
     /// expires on its own at midnight and still holds across a relaunch.
     public var breakSkippedOn: Day?
+    /// Whether the day's goal comes from Almanac's suggested pace instead of
+    /// the hand-set hours below. Those hours are kept either way, as the
+    /// fallback for whenever Almanac is off, unreachable, or has nothing to
+    /// say about a day.
+    public var almanacEnabled: Bool
 
     public init(
         isEnabled: Bool = false,
         days: [Weekday: DayGoal] = [:],
-        breakSkippedOn: Day? = nil
+        breakSkippedOn: Day? = nil,
+        almanacEnabled: Bool = false
     ) {
         self.isEnabled = isEnabled
         self.days = days
         self.breakSkippedOn = breakSkippedOn
+        self.almanacEnabled = almanacEnabled
     }
 
     /// Hand-written because the synthesized one throws on a file saved before
@@ -44,6 +51,7 @@ public struct GoalSettings: Codable, Equatable, Sendable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
         days = try container.decodeIfPresent([Weekday: DayGoal].self, forKey: .days) ?? [:]
         breakSkippedOn = try container.decodeIfPresent(Day.self, forKey: .breakSkippedOn)
+        almanacEnabled = try container.decodeIfPresent(Bool.self, forKey: .almanacEnabled) ?? false
     }
 
     /// Nothing while the feature is off, so every reader of a goal is gated by

@@ -43,9 +43,15 @@ struct DailyGoalsCard: View {
                             GoalRow(weekday: weekday)
                         }
                     }
-                    Text("Leave a day blank if you don't work it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        state.goalSettings.almanacEnabled
+                            ? "The fallback for whenever Almanac is off or hasn't answered yet. Leave a day blank if you don't work it."
+                            : "Leave a day blank if you don't work it."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Divider()
+                    AlmanacPaceSection()
                 }
                 .padding(.leading, 32)
             }
@@ -107,5 +113,101 @@ private struct GoalRow: View {
         )
         // Reads back what was stored, so "7.5" settles as "7:30".
         load()
+    }
+}
+
+/// Almanac's suggested pace, as a source for the goal above instead of the
+/// hand-set weekday hours — an experiment, not the finished feature.
+private struct AlmanacPaceSection: View {
+    @Environment(AppState.self) private var state
+
+    @State private var apiKey = ""
+    @State private var email = ""
+    @State private var syncing = false
+    @FocusState private var focused: Field?
+
+    private enum Field { case apiKey, email }
+
+    private var isEnabled: Binding<Bool> {
+        Binding(
+            get: { state.goalSettings.almanacEnabled },
+            set: { state.setAlmanacEnabled($0) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Pace from Almanac")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                Toggle("", isOn: isEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .disabled(state.needsSetup)
+            }
+            if state.needsSetup {
+                Text("Connect to Harvest above before adding Almanac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if state.goalSettings.almanacEnabled {
+                TextField("Almanac API key", text: $apiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused, equals: .apiKey)
+                TextField("Email at Almanac", text: $email)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused, equals: .email)
+                status
+            }
+        }
+        .onAppear(perform: load)
+        .onChange(of: focused) { _, now in
+            if now == nil { commit() }
+        }
+    }
+
+    @ViewBuilder private var status: some View {
+        HStack(spacing: 8) {
+            if state.almanac.isUnavailable {
+                Text("Almanac didn't accept that — check the key and email.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if let pace = state.almanac.pace {
+                Text("Pace \(Hours.formatted(pace.suggestedDailyPace))/day")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(syncing ? "Syncing…" : "Not synced yet")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Sync Now") {
+                syncing = true
+                Task {
+                    await state.refreshAlmanac(force: true)
+                    syncing = false
+                }
+            }
+            .buttonStyle(.link)
+            .font(.caption)
+            .disabled(apiKey.isEmpty || email.isEmpty)
+        }
+    }
+
+    private func load() {
+        let almanac = state.credentials?.almanac
+        apiKey = almanac?.apiKey ?? ""
+        email = almanac?.email ?? ""
+    }
+
+    private func commit() {
+        guard !apiKey.isEmpty, !email.isEmpty else {
+            if apiKey.isEmpty, email.isEmpty { state.removeAlmanacCredentials() }
+            return
+        }
+        try? state.saveAlmanacCredentials(apiKey: apiKey, email: email)
+        Task { await state.refreshAlmanac(force: true) }
     }
 }

@@ -19,6 +19,9 @@ public final class AppState {
     /// Budgets as they stand: project rows, per-task budgets, and the clock
     /// that keeps them from being asked for on every sync.
     public private(set) var budgets = BudgetBook()
+    /// What Almanac has told us: the resolved person, the current pace, and
+    /// the time off ahead of it.
+    public private(set) var almanac = AlmanacBook()
     public var now: Date = .now
     public var lastSyncAt: Date = .now
     public var syncError: String?
@@ -45,8 +48,11 @@ public final class AppState {
     private let favoritesStore: FavoritesStore
     private let breakTitlesStore: BreakTitlesStore
     private let goalsStore: GoalsStore
+    private let almanacStore: AlmanacStore
     /// Set by tests, which stand in their own client rather than reach Harvest.
     private let injectedClient: HarvestClient?
+    /// Set by tests, which stand in their own client rather than reach Almanac.
+    private let injectedAlmanacClient: AlmanacClient?
     public static let syncInterval = Duration.seconds(30)
     public static let afkInterval = Duration.seconds(10)
     private let syncTicker = Ticker(every: AppState.syncInterval)
@@ -58,6 +64,10 @@ public final class AppState {
         injectedClient ?? credentials.map { HarvestAPI(credentials: $0) }
     }
 
+    var almanacAPI: AlmanacClient? {
+        injectedAlmanacClient ?? credentials?.almanac.map { AlmanacAPI(credentials: $0) }
+    }
+
     public init(
         idleSeconds: @escaping () -> TimeInterval = AFKDetector.systemIdleSeconds,
         sleepWatch: SleepWatch? = nil
@@ -65,15 +75,18 @@ public final class AppState {
         self.idleSeconds = idleSeconds
         self.sleepWatch = sleepWatch ?? SleepWatch()
         self.injectedClient = nil
+        self.injectedAlmanacClient = nil
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
+        self.almanacStore = AlmanacStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
         credentials = Keychain.shared.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
+        almanac = almanacStore.load()
     }
 
     /// Builds a state that talks to `client` and keeps its files under
@@ -83,20 +96,24 @@ public final class AppState {
         client: HarvestClient,
         storageDirectory: URL,
         idleSeconds: @escaping () -> TimeInterval = { 0 },
-        sleepWatch: SleepWatch? = nil
+        sleepWatch: SleepWatch? = nil,
+        almanacClient: AlmanacClient? = nil
     ) {
         self.idleSeconds = idleSeconds
         // A centre of its own, so no real sleep reaches a test.
         self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
         self.injectedClient = client
+        self.injectedAlmanacClient = almanacClient
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         self.goalsStore = GoalsStore(directory: storageDirectory)
+        self.almanacStore = AlmanacStore(directory: storageDirectory)
         afkToleranceMinutes = 10
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
+        almanac = almanacStore.load()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -158,9 +175,39 @@ public final class AppState {
         return Hours.formatted(total(forDay: .now))
     }
 
-    /// The goal for the weekday `day` falls on, or nil for a day left blank.
+    /// The goal for `day`: Almanac's pace, scaled for any time off landing on
+    /// it, when Almanac is switched on and has answered; the hand-set weekday
+    /// goal otherwise, including whenever Almanac has nothing to say.
     public func goal(forDay day: Date) -> DayGoal? {
-        goalSettings.goal(for: Weekday(day))
+        almanacGoal(forDay: day) ?? goalSettings.goal(for: Weekday(day))
+    }
+
+    /// Nil unless Almanac is on and has a cached pace, so every other case —
+    /// off, not yet synced, refused — falls straight through to the hand-set
+    /// goal above. Also nil on a weekend or a full day off: `hours > 0` is
+    /// this type's own definition of "a goal," matching `DayGoal.isSet`.
+    private func almanacGoal(forDay day: Date) -> DayGoal? {
+        guard goalSettings.almanacEnabled, let pace = almanac.pace else { return nil }
+        guard let hours = TimeOffAdjustment.hours(
+            forDay: Day(day),
+            basePace: pace.suggestedDailyPace,
+            constraints: almanac.constraints
+        ), hours > 0 else { return nil }
+        // Almanac has no notion of breaks — keep whatever the hand-set goal
+        // for the weekday says, if anything.
+        let breakHours = goalSettings.days[Weekday(day)]?.breakHours ?? 0
+        return DayGoal(hours: hours, breakHours: breakHours)
+    }
+
+    /// The name of whichever Almanac time off is shaping `day`'s goal, for the
+    /// footer to say why a number looks different from the hand-set one.
+    /// Independent of whether Almanac actually has a pace cached, so a day
+    /// off still explains itself even before the first sync lands.
+    public func timeOffReason(forDay day: Date) -> String? {
+        guard goalSettings.almanacEnabled else { return nil }
+        let covering = almanac.constraints.filter { !$0.billableOnly && $0.covers(Day(day)) }
+        // The one taking the most out of the day is the one worth naming.
+        return covering.max { TimeOffAdjustment.fraction(off: $0) < TimeOffAdjustment.fraction(off: $1) }?.name
     }
 
     /// Whether the break has been waved off for `day`. Yesterday's marker
@@ -326,6 +373,7 @@ public final class AppState {
             syncError = nil
         }
         await loadProjectBudgets()
+        await refreshAlmanac()
     }
 
     /// Internal, so a test can put the last fetch in the past instead of
@@ -346,6 +394,46 @@ public final class AppState {
             return
         } catch { return }
         await loadTaskBudgets()
+    }
+
+    /// Internal, so a test can put the last fetch in the past instead of
+    /// waiting out the refresh interval.
+    func expireAlmanac() {
+        almanac.lastFetchAt = .distantPast
+    }
+
+    /// Fetches the current pace and time off from Almanac, at most once per
+    /// refresh interval unless `force` says otherwise. Mirrors
+    /// `loadProjectBudgets`: a rejected key turns the feature off quietly
+    /// rather than asking again every sync, and any other failure keeps
+    /// whatever was cached before.
+    func refreshAlmanac(force: Bool = false) async {
+        guard goalSettings.almanacEnabled,
+              let email = credentials?.almanac?.email,
+              let almanacAPI,
+              almanac.needsRefresh(force: force) else { return }
+        do {
+            let personId = try await resolvedPersonId(email: email, api: almanacAPI)
+            async let pace = almanacAPI.totalPace(personId: personId)
+            async let constraints = almanacAPI.constraints(email: email)
+            almanac.received(personId: personId, pace: try await pace, constraints: try await constraints)
+            almanacStore.save(almanac)
+        } catch AlmanacAPIError.unauthorized {
+            almanac.refused()
+            almanacStore.save(almanac)
+        } catch {
+            // Keep whatever the cache already has.
+        }
+    }
+
+    /// The id `totalPace` needs, resolved from the email once and cached from
+    /// then on — Almanac's `people` query has no lookup by email of its own.
+    private func resolvedPersonId(email: String, api: AlmanacClient) async throws -> String {
+        if let personId = almanac.personId { return personId }
+        guard let person = try await api.people().first(where: { $0.email == email }) else {
+            throw AlmanacAPIError.personNotFound
+        }
+        return person.id
     }
 
     /// Fills in per-task budgets for the projects the week's entries sit on
@@ -818,6 +906,15 @@ public final class AppState {
         goalsStore.save(goalSettings)
     }
 
+    /// Switches between Almanac's pace and the hand-set weekday goals. The
+    /// hand-set goals are left alone either way, as the fallback for whenever
+    /// this is off.
+    public func setAlmanacEnabled(_ enabled: Bool) {
+        goalSettings.almanacEnabled = enabled
+        goalsStore.save(goalSettings)
+        if enabled { Task { await refreshAlmanac(force: true) } }
+    }
+
     public func addFavorite(_ favorite: Favorite) {
         // Matched by id, not by every field: a project renamed in Harvest is
         // still the same favorite.
@@ -858,7 +955,9 @@ public final class AppState {
     }
 
     func saveCredentials(token: String, accountId: String) throws {
-        let credentials = Keychain.Credentials(token: token, accountId: accountId)
+        // Carries over whatever Almanac credentials were already saved — this
+        // only ever means Harvest's token changed.
+        let credentials = Keychain.Credentials(token: token, accountId: accountId, almanac: self.credentials?.almanac)
         try Keychain.shared.save(credentials)
         self.credentials = credentials
         currentUserId = nil
@@ -875,8 +974,33 @@ public final class AppState {
         book.removeAll()
         projectAssignments = []
         budgets.clear()
+        almanac.clear()
+        almanacStore.save(almanac)
         afkPrompt = nil
         stop()
+    }
+
+    /// Saves Almanac's key and email alongside the Harvest credentials, and
+    /// clears the cached pace so the next sync fetches fresh under the new
+    /// identity. Does nothing without Harvest credentials already in
+    /// place — Almanac is a supplement to what this app is for, not a way
+    /// into it on its own.
+    func saveAlmanacCredentials(apiKey: String, email: String, baseURL: String = AlmanacCredentials.defaultBaseURL) throws {
+        guard var credentials else { return }
+        credentials.almanac = AlmanacCredentials(baseURL: baseURL, apiKey: apiKey, email: email)
+        try Keychain.shared.save(credentials)
+        self.credentials = credentials
+        almanac.clear()
+        almanacStore.save(almanac)
+    }
+
+    func removeAlmanacCredentials() {
+        guard var credentials, credentials.almanac != nil else { return }
+        credentials.almanac = nil
+        try? Keychain.shared.save(credentials)
+        self.credentials = credentials
+        almanac.clear()
+        almanacStore.save(almanac)
     }
 
     /// Runs `work` against Harvest, putting any failure in the error banner.

@@ -52,6 +52,13 @@ struct GoalFooter: View {
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+            // Names whichever Almanac time off scaled the goal below its
+            // usual number, so it doesn't just look like the app miscounted.
+            if let reason = state.timeOffReason(forDay: day) {
+                Text("· \(reason)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             // Only today can be skipped — `breakSkippedOn` holds one day at a
             // time — and only today has a finish time left to move.
@@ -123,13 +130,22 @@ struct GoalFooter: View {
 
     private var noGoal: some View {
         HStack(spacing: 8) {
-            Text("No goal for \(Weekday(day).name)s")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button("Set Goals…", action: openSettings)
-                .buttonStyle(.link)
-                .font(.caption)
-                .pointingCursor()
+            // A day fully off reads as "no goal" the same way an unset
+            // weekday does — there is nothing left to work toward — but it
+            // deserves its own words rather than looking like a gap.
+            if let reason = state.timeOffReason(forDay: day) {
+                Text("Day off · \(reason)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No goal for \(Weekday(day).name)s")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Set Goals…", action: openSettings)
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .pointingCursor()
+            }
             Spacer()
         }
         .padding(.horizontal, 10)

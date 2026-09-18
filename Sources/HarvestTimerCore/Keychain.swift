@@ -11,6 +11,16 @@ struct Keychain {
     struct Credentials: Equatable, Codable {
         let token: String
         let accountId: String
+        /// Almanac's own credentials, alongside Harvest's rather than in a
+        /// keychain item of their own — one item is deliberate, see above.
+        /// Optional so a blob saved before Almanac existed still decodes.
+        var almanac: AlmanacCredentials?
+
+        init(token: String, accountId: String, almanac: AlmanacCredentials? = nil) {
+            self.token = token
+            self.accountId = accountId
+            self.almanac = almanac
+        }
     }
 
     /// One item, not two. macOS asks permission per keychain item, so a token
