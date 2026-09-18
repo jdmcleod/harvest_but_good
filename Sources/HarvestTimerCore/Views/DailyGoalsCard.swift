@@ -4,12 +4,12 @@ import SwiftUI
 struct DailyGoalsCard: View {
     @Environment(AppState.self) private var state
 
-    /// `goalSettings` is read-only from outside `AppState`, so the switch goes
+    /// The settings are read-only from outside `GoalBook`, so the switch goes
     /// through the setter that saves rather than a binding into the store.
     private var isEnabled: Binding<Bool> {
         Binding(
-            get: { state.goalSettings.isEnabled },
-            set: { state.setGoalsEnabled($0) }
+            get: { state.goals.isEnabled },
+            set: { state.goals.setEnabled($0) }
         )
     }
 
@@ -26,7 +26,7 @@ struct DailyGoalsCard: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
-            if state.goalSettings.isEnabled {
+            if state.goals.isEnabled {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("How many hours you're aiming for each day, and the break you usually take. Breaks don't count toward the goal. They just push back when you finish.")
                         .foregroundStyle(.secondary)
@@ -94,13 +94,13 @@ private struct GoalRow: View {
     }
 
     private func load() {
-        let goal = state.goalSettings.days[weekday]
+        let goal = state.goals.storedGoal(for: weekday)
         goalText = goal.map { Hours.formatted($0.hours) } ?? ""
         breakText = (goal?.breakHours ?? 0) > 0 ? Hours.formatted(goal!.breakHours) : ""
     }
 
     private func commit() {
-        state.setGoal(
+        state.goals.setGoal(
             hours: Hours.parse(goalText) ?? 0,
             breakHours: Hours.parse(breakText) ?? 0,
             for: weekday

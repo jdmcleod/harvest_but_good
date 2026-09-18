@@ -9,11 +9,11 @@ struct EntryList: View {
 
     /// A day gone by gets an entry to fill in rather than a running timer, so
     /// the button says which one it is.
-    private var addLabel: String { state.isViewingToday ? "Start Timer" : "Add Entry" }
+    private var addLabel: String { state.clock.isViewingToday ? "Start Timer" : "Add Entry" }
 
     var body: some View {
-        let entries = state.entries(forDay: state.selectedDay)
-        let counts = state.startCounts(forDay: state.selectedDay)
+        let entries = state.entries.entries(forDay: state.clock.selectedDay)
+        let counts = state.timeline.startCounts(forDay: state.clock.selectedDay)
 
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -23,7 +23,7 @@ struct EntryList: View {
                 Button {
                     showingStartTimer = true
                 } label: {
-                    Label(addLabel, systemImage: state.isViewingToday ? "play.circle" : "plus.circle")
+                    Label(addLabel, systemImage: state.clock.isViewingToday ? "play.circle" : "plus.circle")
                         .font(.callout)
                 }
                 .buttonStyle(.borderedProminent)
@@ -31,7 +31,7 @@ struct EntryList: View {
                 .controlSize(.small)
                 .pointingCursor()
                 .help(
-                    state.isViewingToday
+                    state.clock.isViewingToday
                         ? "Start a timer for any project"
                         : "Add an entry to this day for any project"
                 )
@@ -156,7 +156,7 @@ private struct EntryCard: View {
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { editingProjectTask = true }
                         .help("Double-click to change project or task")
-                        if let budget = state.budgetLine(for: entry) {
+                        if let budget = state.budgets.line(for: entry) {
                             Text(budget.summary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -184,7 +184,7 @@ private struct EntryCard: View {
                                     if !focused { commitHours() }
                                 }
                         } else {
-                            Text(Hours.formatted(state.liveHours(for: entry)))
+                            Text(Hours.formatted(state.entries.liveHours(for: entry)))
                                 .font(.system(.title3, design: .rounded).weight(.semibold))
                                 .monospacedDigit()
                                 .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
@@ -231,7 +231,7 @@ private struct EntryCard: View {
             }
 
             Button {
-                Task { await state.toggle(entry) }
+                Task { await state.entries.toggle(entry) }
             } label: {
                 Image(systemName: entry.isRunning ? "stop.circle.fill" : "play.circle.fill")
                     .font(.system(size: 34))
@@ -266,7 +266,7 @@ private struct EntryCard: View {
         )
         .contentShape(Rectangle())
         .contextMenu {
-            if let url = state.projectURL(for: entry.project.id) {
+            if let url = state.session.projectURL(for: entry.project.id) {
                 Button("Open Project in Harvest", systemImage: "safari") {
                     openURL(url)
                 }
@@ -278,9 +278,9 @@ private struct EntryCard: View {
             Menu {
                 ForEach([5, 10, 15, 20], id: \.self) { minutes in
                     Button("-\(minutes) minutes") {
-                        Task { await state.trimFromEnd(entry, minutes: minutes) }
+                        Task { await state.entries.trimFromEnd(entry, minutes: minutes) }
                     }
-                    .disabled(state.liveHours(for: entry) * 60 < Double(minutes))
+                    .disabled(state.entries.liveHours(for: entry) * 60 < Double(minutes))
                 }
             } label: {
                 Label("Trim From End", systemImage: "scissors")
@@ -298,7 +298,7 @@ private struct EntryCard: View {
                 initialTaskId: entry.task.id
             ) { assignment, task, _ in
                 Task {
-                    await state.updateProjectTask(entry, projectId: assignment.project.id, taskId: task.id)
+                    await state.entries.updateProjectTask(entry, projectId: assignment.project.id, taskId: task.id)
                 }
             }
         }
@@ -310,10 +310,10 @@ private struct EntryCard: View {
             isPresented: $confirmingDelete
         ) {
             Button("Delete", role: .destructive) {
-                Task { await state.deleteEntry(entry) }
+                Task { await state.entries.delete(entry) }
             }
         } message: {
-            Text("\(entry.project.name) · \(Hours.formatted(state.liveHours(for: entry)))")
+            Text("\(entry.project.name) · \(Hours.formatted(state.entries.liveHours(for: entry)))")
         }
     }
 
@@ -328,11 +328,11 @@ private struct EntryCard: View {
     }
 
     private func save() {
-        Task { await state.saveNotes(entry, notes: notes) }
+        Task { await state.entries.saveNotes(entry, notes: notes) }
     }
 
     private func beginHoursEdit() {
-        hoursSeed = Hours.toNearestMinute(state.liveHours(for: entry))
+        hoursSeed = Hours.toNearestMinute(state.entries.liveHours(for: entry))
         hoursText = Hours.formatted(hoursSeed)
         editingHours = true
         DispatchQueue.main.async { hoursFocused = true }
@@ -343,7 +343,7 @@ private struct EntryCard: View {
         editingHours = false
         guard let hours = Hours.parse(hoursText, relativeTo: hoursSeed),
               abs(hours - hoursSeed) > 0.0001 else { return }
-        Task { await state.updateHours(entry, hours: hours) }
+        Task { await state.entries.updateHours(entry, hours: hours) }
     }
 
     private func cancelHoursEdit() {

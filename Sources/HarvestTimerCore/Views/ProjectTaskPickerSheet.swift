@@ -22,7 +22,7 @@ struct ProjectTaskPickerSheet: View {
     @FocusState private var notesFocused: Bool
 
     private var selectedAssignment: ProjectAssignment? {
-        state.projectAssignments.first { $0.id == selectedAssignmentId }
+        state.assignments.all.first { $0.id == selectedAssignmentId }
     }
 
     private var selectedTask: NamedRef? {
@@ -35,7 +35,7 @@ struct ProjectTaskPickerSheet: View {
             Text(title)
                 .font(.title3.weight(.semibold))
 
-            if state.projectAssignments.isEmpty {
+            if state.assignments.all.isEmpty {
                 ProgressView("Loading projects…")
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
@@ -64,7 +64,7 @@ struct ProjectTaskPickerSheet: View {
         .padding(20)
         .frame(width: 460)
         .task {
-            await state.loadProjectAssignments()
+            await state.assignments.load()
             applyInitialSelection()
         }
     }
@@ -126,7 +126,7 @@ struct ProjectTaskPickerSheet: View {
     private func applyInitialSelection() {
         guard selectedAssignmentId == nil,
               let initialProjectId,
-              let assignment = state.projectAssignments.first(where: { $0.project.id == initialProjectId })
+              let assignment = state.assignments.all.first(where: { $0.project.id == initialProjectId })
         else { return }
         selectedAssignmentId = assignment.id
         selectedTaskId = initialTaskId
@@ -151,13 +151,13 @@ struct ProjectTaskPickerSheet: View {
     }
 
     private var filteredAssignments: [ProjectSearch.Match] {
-        ProjectSearch.matches(in: state.projectAssignments, query: search)
+        ProjectSearch.matches(in: state.assignments.all, query: search)
     }
 
     private func favoriteToggle(assignment: ProjectAssignment, task: NamedRef) -> some View {
-        let isFavorite = state.isFavorite(projectId: assignment.project.id, taskId: task.id)
+        let isFavorite = state.favorites.contains(projectId: assignment.project.id, taskId: task.id)
         return Button {
-            state.toggleFavorite(Favorite(
+            state.favorites.toggle(Favorite(
                 projectId: assignment.project.id,
                 taskId: task.id,
                 clientName: assignment.client.name,

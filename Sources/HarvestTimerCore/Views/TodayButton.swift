@@ -27,9 +27,9 @@ public struct TodayButton: View {
 
     public var body: some View {
         ZStack {
-            if !state.isViewingToday {
+            if !state.clock.isViewingToday {
                 Button {
-                    state.goToToday()
+                    state.clock.goToToday()
                 } label: {
                     Image(systemName: Self.symbol)
                         .font(.system(size: 13, weight: .medium))

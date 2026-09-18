@@ -29,10 +29,10 @@ struct DayTimelineView: View {
     private let scrollMarkerId = "timelineScrollMarker"
 
     var body: some View {
-        let blocks = state.timelineBlocks(forDay: state.selectedDay)
+        let blocks = state.timeline.blocks(forDay: state.clock.selectedDay)
         let breaks = TimelineBuilder.breaks(between: blocks)
         let projectNames = projectNamesById()
-        let modifiedIds = state.modifiedEntryIds(forDay: state.selectedDay)
+        let modifiedIds = state.timeline.modifiedEntryIds(forDay: state.clock.selectedDay)
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -76,7 +76,7 @@ struct DayTimelineView: View {
                                     width: geometry.size.width
                                 )
                             }
-                            if Calendar.current.isDateInToday(state.selectedDay) {
+                            if Calendar.current.isDateInToday(state.clock.selectedDay) {
                                 nowLine(height: height, width: geometry.size.width)
                             }
                             scrollMarker
@@ -121,7 +121,7 @@ struct DayTimelineView: View {
 
     private func breakTotalBubble(_ breaks: [TimelineBreak]) -> some View {
         let total = breaks.reduce(0) { $0 + $1.duration }
-        let day = Calendar.current.isDateInToday(state.selectedDay) ? "today" : "this day"
+        let day = Calendar.current.isDateInToday(state.clock.selectedDay) ? "today" : "this day"
         return Text("\(Hours.inWords(seconds: total)) of breaks \(day)")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -210,7 +210,7 @@ struct DayTimelineView: View {
         guard !hasAppliedDefaultView, viewportHeight > 0 else { return }
         hasAppliedDefaultView = true
         let totalHours = CGFloat(scale.hourCount)
-        let isAfternoon = Calendar.current.component(.hour, from: state.now) >= 12
+        let isAfternoon = Calendar.current.component(.hour, from: state.clock.now) >= 12
         let visibleHours: Double = isAfternoon ? 8 : 3
         zoom = CGFloat(scale.zoom(toShow: visibleHours, min: Double(minZoom), max: Double(maxZoom)))
         markerY = (defaultTopHour - CGFloat(startHour)) / totalHours * viewportHeight * zoom
@@ -220,7 +220,7 @@ struct DayTimelineView: View {
     }
 
     private func projectNamesById() -> [Int64: String] {
-        state.entries(forDay: state.selectedDay).reduce(into: [:]) { names, entry in
+        state.entries.entries(forDay: state.clock.selectedDay).reduce(into: [:]) { names, entry in
             names[entry.project.id] = entry.project.name
         }
     }
@@ -334,7 +334,7 @@ struct DayTimelineView: View {
         let bottom = yPosition(for: breakBlock.end, height: height)
         let blockHeight = max(bottom - top, 3)
         let blockWidth = width - labelWidth - 22
-        let title = state.breakTitle(forBreakId: breakBlock.id)
+        let title = state.breaks.title(forBreakId: breakBlock.id)
 
         RoundedRectangle(cornerRadius: 4)
             .fill(Color.secondary.opacity(0.08))
@@ -371,7 +371,7 @@ struct DayTimelineView: View {
             get: { editingBreakId == breakBlock.id },
             set: { open in
                 guard !open, editingBreakId == breakBlock.id else { return }
-                state.setBreakTitle(breakTitleDraft, forBreakId: breakBlock.id)
+                state.breaks.setTitle(breakTitleDraft, forBreakId: breakBlock.id)
                 editingBreakId = nil
             }
         )
@@ -386,7 +386,7 @@ struct DayTimelineView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 200)
                 .onSubmit {
-                    state.setBreakTitle(breakTitleDraft, forBreakId: breakBlock.id)
+                    state.breaks.setTitle(breakTitleDraft, forBreakId: breakBlock.id)
                     editingBreakId = nil
                 }
         }
@@ -395,7 +395,7 @@ struct DayTimelineView: View {
 
     @ViewBuilder
     private func nowLine(height: CGFloat, width: CGFloat) -> some View {
-        let y = yPosition(for: state.now, height: height)
+        let y = yPosition(for: state.clock.now, height: height)
         HStack(spacing: 0) {
             Circle()
                 .fill(.red)

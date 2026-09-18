@@ -22,20 +22,46 @@ looking at.
 
 Three targets in one SwiftPM package (`Package.swift`, Swift 5 language mode):
 
-- `HarvestTimerCore` — everything: models, API, storage, and the SwiftUI views under `Views/`.
+- `HarvestTimerCore` — everything, grouped by kind: `State/` (the observable objects the
+  app is made of), `Storage/` (the files and the Keychain), `Harvest/` (the API, its
+  protocol, and the models), `Views/` (SwiftUI).
 - `HarvestTimer` — the executable. `HarvestTimerApp.swift` is an `AppDelegate` that builds the
   status item and window by hand, not a SwiftUI `App`. It owns the one `AppState`.
 - `HarvestTimerCoreTests` — swift-testing, not XCTest.
 
-Views are small and stay in `Views/`.
+Views are small and stay in `Views/`. The value types and the small decision-only pieces
+sit flat at the top of the target — they belong to no one layer, and a flat list reads
+better than a folder of three files.
 
 ## Architecture
 
-**`AppState`** (`@MainActor @Observable`) is the single store. Views read it from the
-environment and call its methods; nothing else touches Harvest or the disk. It has two
-inits: the production one reads the Keychain and builds a real `HarvestAPI`, the test one
-takes a `HarvestClient` and a storage directory and leaves the Keychain alone. Neither
-starts the timers — `start()` does, and tests drive `sync()`/`afkTick()` themselves.
+**`AppState`** (`@MainActor @Observable`) holds the app's parts together and owns the two
+tickers. It does no work of its own beyond wiring: views read it from the environment and
+reach through it to the part they need — `state.entries.toggle(entry)`, `state.goals`,
+`state.clock.selectedDay`. It has two inits: the production one reads the Keychain and
+builds a real `HarvestAPI`, the test one takes a `HarvestClient` and a storage directory
+and leaves the Keychain alone. Neither starts the timers — `start()` does, and tests drive
+`sync()`/`afkTick()` themselves.
+
+The parts, each owning one job and its own file:
+
+- **`Session`** — credentials, the `HarvestClient` they build, and the two account facts a
+  sync learns (which user, and where the account's pages live).
+- **`Clock`** — `now`, the day on screen, the week around it, and the midnight rollover.
+  Everything reads the day from `now` rather than the system clock, so a test can move the
+  day without waiting one out.
+- **`EntryStore`** — the entries and every write to Harvest. It owns the `EventLog`
+  privately, because each write has to leave the matching log line; nothing else can
+  change an entry without the timeline staying a true account of it.
+- **`Timeline`** — the reading side of the log: a day's blocks, its breaks, and which
+  entries to stripe.
+- **`AwayWatch`** — idleness, the prompt it raises, and the three answers to it.
+- **`BudgetBoard`** — asks Harvest for the budget report and hands it to `BudgetBook`,
+  which decides what a budget means and when it is stale.
+- **`FavoritesBook`**, **`GoalBook`**, **`BreakTitleBook`**, **`AssignmentBook`** — each
+  owns its own values and its own file, so a change is saved as it is made.
+- **`ErrorSink`** — the one error banner. Anything talking to Harvest reports failures
+  there rather than deciding where a message goes.
 
 **`HarvestClient`** is the protocol covering every call the app makes. `HarvestAPI`
 implements it against api.harvestapp.com; tests use `FakeHarvest` (in-memory, mimics
@@ -48,7 +74,7 @@ history, so start/stop timestamps exist only here — append-only JSON lines, on
 day, under `~/Library/Application Support/HarvestTimer/` (alongside `FavoritesStore`).
 `TimelineBuilder` turns those events into the timeline blocks the day view draws. Entries
 started elsewhere (web, phone) have no local events, so they show in the list but draw no
-blocks; `AppState.recordExternalTimerChange` writes events when a sync reveals a change
+blocks; `EntryStore.recordExternalTimerChange` writes events when a sync reveals a change
 made off-app.
 
 **`Day`** wraps Harvest's `yyyy-MM-dd` with a fixed POSIX/Gregorian formatter. Prefer it
