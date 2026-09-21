@@ -27,21 +27,28 @@ public struct GoalSettings: Codable, Equatable, Sendable {
     /// expires on its own at midnight and still holds across a relaunch.
     public var breakSkippedOn: Day?
     /// Whether the day's goal comes from Almanac's suggested pace instead of
-    /// the hand-set hours below. Those hours are kept either way, as the
-    /// fallback for whenever Almanac is off, unreachable, or has nothing to
-    /// say about a day.
-    public var almanacEnabled: Bool
+    /// the hand-set hours below. Those hours are kept either way — as the
+    /// base to adjust when only `almanacTimeOffEnabled` is on, and as the
+    /// fallback whenever neither is, or Almanac has nothing to say yet.
+    public var almanacPaceEnabled: Bool
+    /// Whether a day's number gets scaled down for time off Almanac knows
+    /// about, independent of whether the number itself came from Almanac's
+    /// pace or the hand-set hours — someone may want their own pace with
+    /// Almanac only stepping in for a half day or a day off.
+    public var almanacTimeOffEnabled: Bool
 
     public init(
         isEnabled: Bool = false,
         days: [Weekday: DayGoal] = [:],
         breakSkippedOn: Day? = nil,
-        almanacEnabled: Bool = false
+        almanacPaceEnabled: Bool = false,
+        almanacTimeOffEnabled: Bool = false
     ) {
         self.isEnabled = isEnabled
         self.days = days
         self.breakSkippedOn = breakSkippedOn
-        self.almanacEnabled = almanacEnabled
+        self.almanacPaceEnabled = almanacPaceEnabled
+        self.almanacTimeOffEnabled = almanacTimeOffEnabled
     }
 
     /// Hand-written because the synthesized one throws on a file saved before
@@ -51,7 +58,18 @@ public struct GoalSettings: Codable, Equatable, Sendable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
         days = try container.decodeIfPresent([Weekday: DayGoal].self, forKey: .days) ?? [:]
         breakSkippedOn = try container.decodeIfPresent(Day.self, forKey: .breakSkippedOn)
-        almanacEnabled = try container.decodeIfPresent(Bool.self, forKey: .almanacEnabled) ?? false
+        // `almanacEnabled` is what the combined switch used to be called,
+        // before pace and time off split into their own toggles — read it
+        // from a key of its own, so a file saved under the old name keeps
+        // doing what it did rather than losing the setting outright.
+        let legacyContainer = try? decoder.container(keyedBy: LegacyCodingKeys.self)
+        let legacyAlmanacEnabled = try legacyContainer?.decodeIfPresent(Bool.self, forKey: .almanacEnabled) ?? false
+        almanacPaceEnabled = try container.decodeIfPresent(Bool.self, forKey: .almanacPaceEnabled) ?? legacyAlmanacEnabled
+        almanacTimeOffEnabled = try container.decodeIfPresent(Bool.self, forKey: .almanacTimeOffEnabled) ?? legacyAlmanacEnabled
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case almanacEnabled
     }
 
     /// Nothing while the feature is off, so every reader of a goal is gated by

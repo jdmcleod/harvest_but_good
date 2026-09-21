@@ -175,36 +175,53 @@ public final class AppState {
         return Hours.formatted(total(forDay: .now))
     }
 
-    /// The goal for `day`: Almanac's pace, scaled for any time off landing on
-    /// it, when Almanac is switched on and has answered; the hand-set weekday
-    /// goal otherwise, including whenever Almanac has nothing to say.
+    /// The goal for `day`. Two independent switches shape it: whether the
+    /// base number comes from Almanac's pace or the hand-set weekday hours,
+    /// and whether that number then gets scaled down for time off Almanac
+    /// knows about. Falls back to the hand-set weekday goal, unscaled,
+    /// whenever neither switch is on or Almanac has nothing to say yet.
     public func goal(forDay day: Date) -> DayGoal? {
         almanacGoal(forDay: day) ?? goalSettings.goal(for: Weekday(day))
     }
 
-    /// Nil unless Almanac is on and has a cached pace, so every other case —
-    /// off, not yet synced, refused — falls straight through to the hand-set
-    /// goal above. Also nil on a weekend or a full day off: `hours > 0` is
-    /// this type's own definition of "a goal," matching `DayGoal.isSet`.
+    /// Nil unless at least one Almanac switch is on, so a plain hand-set goal
+    /// falls straight through to `goal(forDay:)`'s fallback untouched. Also
+    /// nil on a weekend or a day scaled down to nothing: `hours > 0` is this
+    /// type's own definition of "a goal," matching `DayGoal.isSet`.
     private func almanacGoal(forDay day: Date) -> DayGoal? {
-        guard goalSettings.almanacEnabled, let pace = almanac.pace else { return nil }
-        guard let hours = TimeOffAdjustment.hours(
-            forDay: Day(day),
-            basePace: pace.suggestedDailyPace,
-            constraints: almanac.constraints
-        ), hours > 0 else { return nil }
+        guard goalSettings.almanacPaceEnabled || goalSettings.almanacTimeOffEnabled else { return nil }
+        let manualGoal = goalSettings.goal(for: Weekday(day))
+
+        // The number to adjust: Almanac's own pace when that switch is on
+        // (nil until the first sync lands), or the hand-set hours as the
+        // base someone wants Almanac to only nudge around.
+        guard let baseHours = goalSettings.almanacPaceEnabled ? almanac.pace?.suggestedDailyPace : manualGoal?.hours
+        else { return nil }
+
+        let hours: Double
+        if goalSettings.almanacTimeOffEnabled {
+            guard let adjusted = TimeOffAdjustment.hours(
+                forDay: Day(day),
+                basePace: baseHours,
+                constraints: almanac.constraints
+            ) else { return nil } // a weekend — nothing Almanac paces to adjust
+            hours = adjusted
+        } else {
+            hours = baseHours
+        }
+        guard hours > 0 else { return nil }
+
         // Almanac has no notion of breaks — keep whatever the hand-set goal
         // for the weekday says, if anything.
-        let breakHours = goalSettings.days[Weekday(day)]?.breakHours ?? 0
-        return DayGoal(hours: hours, breakHours: breakHours)
+        return DayGoal(hours: hours, breakHours: manualGoal?.breakHours ?? 0)
     }
 
     /// The name of whichever Almanac time off is shaping `day`'s goal, for the
     /// footer to say why a number looks different from the hand-set one.
-    /// Independent of whether Almanac actually has a pace cached, so a day
-    /// off still explains itself even before the first sync lands.
+    /// Tied to the time-off switch alone, not the pace one, so it still
+    /// explains a scaled hand-set goal.
     public func timeOffReason(forDay day: Date) -> String? {
-        guard goalSettings.almanacEnabled else { return nil }
+        guard goalSettings.almanacTimeOffEnabled else { return nil }
         let covering = almanac.constraints.filter { !$0.billableOnly && $0.covers(Day(day)) }
         // The one taking the most out of the day is the one worth naming.
         return covering.max { TimeOffAdjustment.fraction(off: $0) < TimeOffAdjustment.fraction(off: $1) }?.name
@@ -402,21 +419,31 @@ public final class AppState {
         almanac.lastFetchAt = .distantPast
     }
 
-    /// Fetches the current pace and time off from Almanac, at most once per
-    /// refresh interval unless `force` says otherwise. Mirrors
-    /// `loadProjectBudgets`: a rejected key turns the feature off quietly
-    /// rather than asking again every sync, and any other failure keeps
-    /// whatever was cached before.
+    /// Fetches whatever the two Almanac switches call for — the pace, the
+    /// time off, or both — at most once per refresh interval unless `force`
+    /// says otherwise. Only asks Almanac for what's actually switched on: a
+    /// time-off-only setup never needs a person id resolved at all, since
+    /// `constraints(email:)` looks up by email on its own. Mirrors
+    /// `loadProjectBudgets`: a rejected key turns both off quietly rather
+    /// than asking again every sync, and any other failure keeps whatever
+    /// was cached before.
     func refreshAlmanac(force: Bool = false) async {
-        guard goalSettings.almanacEnabled,
+        let wantsPace = goalSettings.almanacPaceEnabled
+        let wantsTimeOff = goalSettings.almanacTimeOffEnabled
+        guard wantsPace || wantsTimeOff,
               let email = credentials?.almanac?.email,
               let almanacAPI,
               almanac.needsRefresh(force: force) else { return }
         do {
-            let personId = try await resolvedPersonId(email: email, api: almanacAPI)
-            async let pace = almanacAPI.totalPace(personId: personId)
-            async let constraints = almanacAPI.constraints(email: email)
-            almanac.received(personId: personId, pace: try await pace, constraints: try await constraints)
+            var personId: String?
+            var pace: AlmanacPace?
+            if wantsPace {
+                let resolved = try await resolvedPersonId(email: email, api: almanacAPI)
+                personId = resolved
+                pace = try await almanacAPI.totalPace(personId: resolved)
+            }
+            let constraints = wantsTimeOff ? try await almanacAPI.constraints(email: email) : nil
+            almanac.received(personId: personId, pace: pace, constraints: constraints)
             almanacStore.save(almanac)
         } catch AlmanacAPIError.unauthorized {
             almanac.refused()
@@ -906,11 +933,21 @@ public final class AppState {
         goalsStore.save(goalSettings)
     }
 
-    /// Switches between Almanac's pace and the hand-set weekday goals. The
-    /// hand-set goals are left alone either way, as the fallback for whenever
-    /// this is off.
-    public func setAlmanacEnabled(_ enabled: Bool) {
-        goalSettings.almanacEnabled = enabled
+    /// Switches between Almanac's pace and the hand-set weekday hours as the
+    /// base for the goal. The hand-set hours are left alone either way — as
+    /// the base to adjust when only time off syncing is on, and as the
+    /// fallback whenever neither switch is.
+    public func setAlmanacPaceEnabled(_ enabled: Bool) {
+        goalSettings.almanacPaceEnabled = enabled
+        goalsStore.save(goalSettings)
+        if enabled { Task { await refreshAlmanac(force: true) } }
+    }
+
+    /// Switches whether a day's number — Almanac's pace or the hand-set
+    /// hours, whichever is driving it — gets scaled down for time off
+    /// Almanac knows about.
+    public func setAlmanacTimeOffEnabled(_ enabled: Bool) {
+        goalSettings.almanacTimeOffEnabled = enabled
         goalsStore.save(goalSettings)
         if enabled { Task { await refreshAlmanac(force: true) } }
     }

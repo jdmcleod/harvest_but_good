@@ -13,6 +13,20 @@ struct DailyGoalsCard: View {
         )
     }
 
+    /// What the hand-set hours below are actually for, given the two
+    /// Almanac switches — the goal itself, the base Almanac's time off
+    /// scales, or the fallback for whenever Almanac has nothing to say.
+    private var weekdayGoalsCaption: String {
+        switch (state.goalSettings.almanacPaceEnabled, state.goalSettings.almanacTimeOffEnabled) {
+        case (true, _):
+            return "The fallback for whenever Almanac's pace is off or hasn't answered yet. Leave a day blank if you don't work it."
+        case (false, true):
+            return "The base Almanac adjusts for time off. Leave a day blank if you don't work it."
+        case (false, false):
+            return "Leave a day blank if you don't work it."
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -43,13 +57,9 @@ struct DailyGoalsCard: View {
                             GoalRow(weekday: weekday)
                         }
                     }
-                    Text(
-                        state.goalSettings.almanacEnabled
-                            ? "The fallback for whenever Almanac is off or hasn't answered yet. Leave a day blank if you don't work it."
-                            : "Leave a day blank if you don't work it."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text(weekdayGoalsCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Divider()
                     AlmanacPaceSection()
                 }
@@ -116,8 +126,9 @@ private struct GoalRow: View {
     }
 }
 
-/// Almanac's suggested pace, as a source for the goal above instead of the
-/// hand-set weekday hours — an experiment, not the finished feature.
+/// Almanac's suggested pace and its time off, as two independent inputs to
+/// the goal above instead of one combined switch — an experiment, not the
+/// finished feature.
 private struct AlmanacPaceSection: View {
     @Environment(AppState.self) private var state
 
@@ -128,43 +139,70 @@ private struct AlmanacPaceSection: View {
 
     private enum Field { case apiKey, email }
 
-    private var isEnabled: Binding<Bool> {
+    private var paceEnabled: Binding<Bool> {
         Binding(
-            get: { state.goalSettings.almanacEnabled },
-            set: { state.setAlmanacEnabled($0) }
+            get: { state.goalSettings.almanacPaceEnabled },
+            set: { state.setAlmanacPaceEnabled($0) }
         )
+    }
+
+    private var timeOffEnabled: Binding<Bool> {
+        Binding(
+            get: { state.goalSettings.almanacTimeOffEnabled },
+            set: { state.setAlmanacTimeOffEnabled($0) }
+        )
+    }
+
+    /// Whether either switch needs the key and email fields shown at all.
+    private var anyEnabled: Bool {
+        state.goalSettings.almanacPaceEnabled || state.goalSettings.almanacTimeOffEnabled
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("Pace from Almanac")
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Toggle("", isOn: isEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .disabled(state.needsSetup)
-            }
+            Text("Almanac")
+                .font(.subheadline.weight(.medium))
             if state.needsSetup {
                 Text("Connect to Harvest above before adding Almanac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if state.goalSettings.almanacEnabled {
-                TextField("Almanac API key", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focused, equals: .apiKey)
-                    .onSubmit(commit)
-                TextField("Email at Almanac", text: $email)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focused, equals: .email)
-                    .onSubmit(commit)
-                status
+            } else {
+                toggleRow(
+                    "Use Almanac's suggested pace as the goal",
+                    isOn: paceEnabled
+                )
+                toggleRow(
+                    "Adjust for Almanac time off",
+                    isOn: timeOffEnabled
+                )
+                if anyEnabled {
+                    TextField("Almanac API key", text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focused, equals: .apiKey)
+                        .onSubmit(commit)
+                    TextField("Email at Almanac", text: $email)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focused, equals: .email)
+                        .onSubmit(commit)
+                    status
+                }
             }
         }
         .onAppear(perform: load)
         .onChange(of: focused) { _, now in
             if now == nil { commit() }
+        }
+    }
+
+    private func toggleRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption)
+            Spacer()
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .controlSize(.small)
         }
     }
 
@@ -174,22 +212,10 @@ private struct AlmanacPaceSection: View {
                 Text("Almanac didn't accept that — check the key and email.")
                     .font(.caption)
                     .foregroundStyle(.red)
-            } else if let pace = state.almanac.pace {
-                // Everything Almanac sent, while this is new enough that a
-                // surprising number is more likely than not.
-                Text(
-                    "Pace \(Hours.formatted(pace.suggestedDailyPace))/day"
-                        + " · target \(Hours.formatted(pace.target))"
-                        + " · worked \(Hours.formatted(pace.worked))"
-                        + " · remaining \(Hours.formatted(pace.remaining))"
-                        + " · person #\(state.almanac.personId ?? "?")"
-                )
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
             } else {
-                Text(syncing ? "Syncing…" : "Not synced yet")
+                Text(statusText)
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -200,6 +226,26 @@ private struct AlmanacPaceSection: View {
                 .font(.caption)
                 .disabled(apiKey.isEmpty || email.isEmpty)
         }
+    }
+
+    /// Everything Almanac sent for whichever switches are on, while this is
+    /// new enough that a surprising number is more likely than not.
+    private var statusText: String {
+        var parts: [String] = []
+        if state.goalSettings.almanacPaceEnabled {
+            if let pace = state.almanac.pace {
+                parts.append("pace \(Hours.formatted(pace.suggestedDailyPace))/day")
+                parts.append("target \(Hours.formatted(pace.target))")
+                parts.append("worked \(Hours.formatted(pace.worked))")
+                parts.append("remaining \(Hours.formatted(pace.remaining))")
+                parts.append("person #\(state.almanac.personId ?? "?")")
+            }
+        }
+        if state.goalSettings.almanacTimeOffEnabled, !state.almanac.constraints.isEmpty {
+            parts.append("\(state.almanac.constraints.count) time off item(s) synced")
+        }
+        guard !parts.isEmpty else { return syncing ? "Syncing…" : "Not synced yet" }
+        return parts.joined(separator: " · ")
     }
 
     private func load() {

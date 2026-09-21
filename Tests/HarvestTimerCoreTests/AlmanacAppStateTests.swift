@@ -28,7 +28,7 @@ func runAlmanacAppStateTests() async {
 
             expect(state.goal(forDay: wednesday) == nil, "nothing until the feature is on")
 
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
             await state.refreshAlmanac(force: true)
 
             expect(state.goal(forDay: wednesday)?.hours == 8.4, "Almanac's own number, got \(String(describing: state.goal(forDay: wednesday)?.hours))")
@@ -40,24 +40,24 @@ func runAlmanacAppStateTests() async {
             let fake = FakeAlmanac()
             let state = connected(fake, storageDirectory: directory)
             state.setGoal(hours: 6, breakHours: 0.5, for: Weekday(wednesday))
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
             // Deliberately not synced yet — the fake has never answered.
 
             expect(state.goal(forDay: wednesday)?.hours == 6, "the hand-set goal fills in until Almanac has something to say")
         }
     }
 
-    await test("turning Almanac off brings the manual goal straight back") {
+    await test("turning Almanac's pace off brings the manual goal straight back") {
         try await withTemporaryDirectory { directory in
             let fake = FakeAlmanac()
             fake.knownPeople = [AlmanacPerson(id: "1", email: email)]
             let state = connected(fake, storageDirectory: directory)
             state.setGoal(hours: 6, breakHours: 0, for: Weekday(wednesday))
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
             await state.refreshAlmanac(force: true)
             expect(state.goal(forDay: wednesday)?.hours == 8, "Almanac's default pace while it's on")
 
-            state.setAlmanacEnabled(false)
+            state.setAlmanacPaceEnabled(false)
             expect(state.goal(forDay: wednesday)?.hours == 6, "and the manual goal the moment it's off")
         }
     }
@@ -68,7 +68,7 @@ func runAlmanacAppStateTests() async {
             fake.failNextCall = AlmanacAPIError.unauthorized
             let state = connected(fake, storageDirectory: directory)
             state.setGoal(hours: 5, breakHours: 0, for: Weekday(wednesday))
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
             await state.refreshAlmanac(force: true)
 
             expect(state.almanac.isUnavailable, "the book should remember the key was refused")
@@ -87,7 +87,7 @@ func runAlmanacAppStateTests() async {
             fake.knownPeople = [AlmanacPerson(id: "1", email: email)]
             let state = connected(fake, storageDirectory: directory)
             state.setGoal(hours: 6, breakHours: 0.5, for: Weekday(wednesday))
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
             await state.refreshAlmanac(force: true)
 
             let goal = state.goal(forDay: wednesday)
@@ -96,13 +96,48 @@ func runAlmanacAppStateTests() async {
         }
     }
 
-    await test("a full day off leaves no goal, and names the reason") {
+    await test("Almanac's pace alone, without time off syncing, ignores a day off entirely") {
         try await withTemporaryDirectory { directory in
             let fake = FakeAlmanac()
             fake.knownPeople = [AlmanacPerson(id: "1", email: email)]
             fake.constraints = [constraint(name: "Vacation", start: day("2026-06-17"))]
             let state = connected(fake, storageDirectory: directory)
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
+            await state.refreshAlmanac(force: true)
+
+            expect(state.goal(forDay: wednesday)?.hours == 8, "the pace switch alone never looks at constraints")
+            expect(state.timeOffReason(forDay: wednesday) == nil, "and names no reason, since that switch is off")
+        }
+    }
+
+    await test("time off syncing alone scales someone's own hand-set pace, not Almanac's") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeAlmanac()
+            // Deliberately no knownPeople and no pace fetch expected — a
+            // time-off-only setup should never need a person resolved.
+            fake.constraints = [
+                constraint(name: "Dentist", start: day("2026-06-17"), startTime: "13:00:00", endTime: "17:00:00"),
+            ]
+            let state = connected(fake, storageDirectory: directory)
+            state.setGoal(hours: 6, breakHours: 0.5, for: Weekday(wednesday))
+            state.setAlmanacTimeOffEnabled(true)
+            await state.refreshAlmanac(force: true)
+
+            expect(fake.calls == ["constraints(\(email))"], "only the constraints were ever asked for, got \(fake.calls)")
+            let goal = state.goal(forDay: wednesday)
+            expect(goal?.hours == 3, "half of the hand-set six hours, got \(String(describing: goal?.hours))")
+            expect(goal?.breakHours == 0.5, "the hand-set break survives the adjustment")
+            expect(state.timeOffReason(forDay: wednesday) == "Dentist", "and the reason names the appointment")
+        }
+    }
+
+    await test("time off syncing alone zeroes a full day off someone's own pace") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeAlmanac()
+            fake.constraints = [constraint(name: "Vacation", start: day("2026-06-17"))]
+            let state = connected(fake, storageDirectory: directory)
+            state.setGoal(hours: 6, breakHours: 0, for: Weekday(wednesday))
+            state.setAlmanacTimeOffEnabled(true)
             await state.refreshAlmanac(force: true)
 
             expect(state.goal(forDay: wednesday) == nil, "nothing to work toward on a day off")
@@ -110,7 +145,20 @@ func runAlmanacAppStateTests() async {
         }
     }
 
-    await test("a half day off scales the pace and still names the reason") {
+    await test("with no hand-set goal, time off syncing alone has no base to adjust") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeAlmanac()
+            fake.constraints = [constraint(name: "Vacation", start: day("2026-06-17"))]
+            let state = connected(fake, storageDirectory: directory)
+            // No setGoal call — Wednesday is left blank.
+            state.setAlmanacTimeOffEnabled(true)
+            await state.refreshAlmanac(force: true)
+
+            expect(state.goal(forDay: wednesday) == nil, "there was never a goal here to override")
+        }
+    }
+
+    await test("both switches together scale Almanac's own pace") {
         try await withTemporaryDirectory { directory in
             let fake = FakeAlmanac()
             fake.knownPeople = [AlmanacPerson(id: "1", email: email)]
@@ -118,11 +166,11 @@ func runAlmanacAppStateTests() async {
                 constraint(name: "Dentist", start: day("2026-06-17"), startTime: "13:00:00", endTime: "17:00:00"),
             ]
             let state = connected(fake, storageDirectory: directory)
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
+            state.setAlmanacTimeOffEnabled(true)
             await state.refreshAlmanac(force: true)
 
-            expect(state.goal(forDay: wednesday)?.hours == 4, "half the day off, half the pace, got \(String(describing: state.goal(forDay: wednesday)?.hours))")
-            expect(state.timeOffReason(forDay: wednesday) == "Dentist", "and the reason names the appointment")
+            expect(state.goal(forDay: wednesday)?.hours == 4, "half of Almanac's own eight hours, got \(String(describing: state.goal(forDay: wednesday)?.hours))")
         }
     }
 
@@ -131,7 +179,7 @@ func runAlmanacAppStateTests() async {
             let fake = FakeAlmanac()
             fake.knownPeople = [AlmanacPerson(id: "42", email: email)]
             let state = connected(fake, storageDirectory: directory)
-            state.setAlmanacEnabled(true)
+            state.setAlmanacPaceEnabled(true)
             await state.refreshAlmanac(force: true)
             expect(state.almanac.personId == "42", "resolved once")
 
