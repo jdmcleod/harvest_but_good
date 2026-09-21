@@ -73,19 +73,24 @@ Both values go straight into the macOS Keychain. Revoke the token from that same
 
 ## Almanac integration (experimental, `harvest-but-for-luke` branch)
 
-RoleModel's [Almanac](https://almanac.rolemodel.dev) already works out a sensible daily pace for the quarter — your remaining hours spread over your remaining workdays, minus whatever time off you've already booked. This branch pulls that number in as the day's goal instead of a hand-typed one, and scales it down for a half day or a day off. Your hand-set per-weekday goals stay in place as the fallback whenever Almanac is off, hasn't answered yet, or its key gets rejected.
+RoleModel's [Almanac](https://almanac.rolemodel.dev) already works out a sensible daily pace for the quarter — your remaining hours spread over your remaining workdays, minus whatever time off you've already booked. This branch can pull that number in as the day's goal, and separately can scale whatever number is driving the goal down for a half day or a day off. The two are independent switches:
+
+- **Use Almanac's suggested pace as the goal** — the day's goal comes from Almanac's pace instead of your hand-typed hours.
+- **Adjust for Almanac time off** — whatever's driving the goal (Almanac's pace, or your own hand-typed hours if the switch above is off) gets scaled down for a half day or zeroed for a day off Almanac knows about.
+
+So you can run Almanac's pace outright, keep your own hand-typed hours and just have Almanac nudge them for a half day, or run both together. Your hand-set per-weekday goals stay in place as the fallback whenever neither switch is on, Almanac hasn't answered yet, or its key gets rejected.
 
 **Setup:**
 
 1. In Almanac, open **/api_keys** and create a key.
 2. In the app, open the gear → **Daily Pace**, and switch the master toggle on if it isn't already.
-3. Under **Pace from Almanac**, switch it on, then enter the API key and the email you use at RoleModel. Press Return or click away to save, or use **Sync Now**.
-4. The status line shows the pace Almanac sent back, along with `target`/`worked`/`remaining` and the resolved person id — handy if a number looks off.
+3. Under **Almanac**, switch on whichever of the two behaviors above you want, then enter the API key and the email you use at RoleModel. Press Return or click away to save, or use **Sync Now**.
+4. The status line shows whatever's relevant to the switches you have on — the pace Almanac sent back with `target`/`worked`/`remaining` and the resolved person id, and/or how many time off items are synced — handy if a number looks off.
 
 **Known rough edges**, since this is still an experiment:
 
 - A same-day time-off entry (say, a half day booked for today) can take a sync cycle to show up — Almanac's own API only returns time off that ends *after* today, so the app leans on what it already cached from when that entry was still "tomorrow."
-- The pace is quarter-scoped, so the last few days of a quarter can look a little off as the remaining hours run down.
+- Almanac's pace is quarter-scoped, so the last few days of a quarter can look a little off as the remaining hours run down. There's no year-scoped option — Almanac's own API has no equivalent field for it, only the quarter one.
 - The API key isn't tied to your identity in Almanac — it's your key *and* the email you enter together that determine whose pace and time off come back.
 
 ## Staying up to date
