@@ -61,6 +61,23 @@ Both values go straight into the macOS Keychain. Revoke the token from that same
 
 Open the gear, then **Updates → Check**. If a newer release is out, **Install and Restart** downloads it, swaps it in and reopens the app. Nothing is checked unless you ask.
 
+## Almanac integration (experimental, `harvest-but-for-luke` branch)
+
+RoleModel's [Almanac](https://almanac.rolemodel.dev) already works out a sensible daily pace for the quarter — your remaining hours spread over your remaining workdays, minus whatever time off you've already booked. This branch pulls that number in as the day's goal instead of a hand-typed one, and scales it down for a half day or a day off. Your hand-set per-weekday goals stay in place as the fallback whenever Almanac is off, hasn't answered yet, or its key gets rejected.
+
+**Setup:**
+
+1. In Almanac, open **/api_keys** and create a key.
+2. In the app, open the gear → **Daily Pace**, and switch the master toggle on if it isn't already.
+3. Under **Pace from Almanac**, switch it on, then enter the API key and the email you use at RoleModel. Press Return or click away to save, or use **Sync Now**.
+4. The status line shows the pace Almanac sent back, along with `target`/`worked`/`remaining` and the resolved person id — handy if a number looks off.
+
+**Known rough edges**, since this is still an experiment:
+
+- A same-day time-off entry (say, a half day booked for today) can take a sync cycle to show up — Almanac's own API only returns time off that ends *after* today, so the app leans on what it already cached from when that entry was still "tomorrow."
+- The pace is quarter-scoped, so the last few days of a quarter can look a little off as the remaining hours run down.
+- The API key isn't tied to your identity in Almanac — it's your key *and* the email you enter together that determine whose pace and time off come back.
+
 ## Development
 
 You need a Swift toolchain. Command Line Tools are enough to build; the tests need Xcode.
