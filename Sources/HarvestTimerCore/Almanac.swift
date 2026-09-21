@@ -25,7 +25,12 @@ public struct AlmanacCredentials: Equatable, Codable, Sendable {
 }
 
 /// A point in the day, the way Almanac writes a constraint's start and end
-/// time ("13:00:00").
+/// time — nominally "13:00:00", though a bare `time` column serialized
+/// through Rails' JSON encoder can arrive as a full ISO8601 stamp on a dummy
+/// date instead ("2000-01-01T13:00:00.000Z"), since Rails casts a `time`
+/// column to a `Time` anchored at 2000-01-01 and serializes it like any
+/// other timestamp. Parsed leniently enough to take either shape, since a
+/// silent misparse here reads as "no time off" rather than an error.
 public struct TimeOfDay: Equatable, Sendable {
     public let secondsSinceMidnight: Int
 
@@ -36,7 +41,13 @@ public struct TimeOfDay: Equatable, Sendable {
     public var hours: Double { Double(secondsSinceMidnight) / 3600 }
 
     public init?(string: String) {
-        let parts = string.split(separator: ":").compactMap { Int($0) }
+        // Drop everything up to the last "T" or space, so a bare "13:00:00"
+        // and "2000-01-01T13:00:00.000Z" both leave just the time-of-day
+        // behind; a trailing ".000Z" then falls out of the digits-and-colons
+        // filter below on its own.
+        let afterDate = string.split(whereSeparator: { $0 == "T" || $0 == " " }).last ?? Substring(string)
+        let timeDigits = afterDate.prefix { $0.isNumber || $0 == ":" }
+        let parts = timeDigits.split(separator: ":").compactMap { Int($0) }
         guard parts.count >= 2 else { return nil }
         let seconds = parts.count > 2 ? parts[2] : 0
         secondsSinceMidnight = parts[0] * 3600 + parts[1] * 60 + seconds
