@@ -174,6 +174,47 @@ func runAlmanacAppStateTests() async {
         }
     }
 
+    await test("both switches together zero out a full day off, rather than falling back to the same pace") {
+        try await withTemporaryDirectory { directory in
+            // The regression this guards: a day scaled to exactly zero used
+            // to be treated as "Almanac has nothing to say" and fall back to
+            // goalSettings.goal(for:) — which, since almanacPaceEnabled has
+            // no hand-set weekday goal of its own to fall back to, read as
+            // no goal here too, by coincidence rather than by the right
+            // reasoning. The clearer regression is in the test below, where
+            // a hand-set goal really is sitting there waiting to leak through.
+            let fake = FakeAlmanac()
+            fake.knownPeople = [AlmanacPerson(id: "1", email: email)]
+            fake.constraints = [constraint(name: "Vacation", start: day("2026-06-17"))]
+            let state = connected(fake, storageDirectory: directory)
+            state.setAlmanacPaceEnabled(true)
+            state.setAlmanacTimeOffEnabled(true)
+            await state.refreshAlmanac(force: true)
+
+            expect(state.goal(forDay: wednesday) == nil, "the whole day is off, got \(String(describing: state.goal(forDay: wednesday)))")
+        }
+    }
+
+    await test("a full day off doesn't leak the hand-set goal back in when Almanac's pace is also on") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeAlmanac()
+            fake.knownPeople = [AlmanacPerson(id: "1", email: email)]
+            fake.constraints = [constraint(name: "Vacation", start: day("2026-06-17"))]
+            let state = connected(fake, storageDirectory: directory)
+            // A hand-set goal that would wrongly leak through if a zeroed
+            // day were mistaken for "Almanac has nothing to say."
+            state.setGoal(hours: 6, breakHours: 0, for: Weekday(wednesday))
+            state.setAlmanacPaceEnabled(true)
+            state.setAlmanacTimeOffEnabled(true)
+            await state.refreshAlmanac(force: true)
+
+            expect(
+                state.goal(forDay: wednesday) == nil,
+                "the day off should win, not the hand-set six hours, got \(String(describing: state.goal(forDay: wednesday)))"
+            )
+        }
+    }
+
     await test("the resolved person id survives a restart, so it isn't looked up every launch") {
         try await withTemporaryDirectory { directory in
             let fake = FakeAlmanac()
@@ -194,6 +235,52 @@ func runAlmanacAppStateTests() async {
             await reopened.refreshAlmanac()
 
             expect(reopened.almanac.personId == "42", "the cached id survived the restart, got \(String(describing: reopened.almanac.personId))")
+        }
+    }
+
+    await test("re-saving the same key and email doesn't clear the cached constraints") {
+        try await withTemporaryDirectory { directory in
+            // A constraint ending today drops out of Almanac's own
+            // next_constraints the moment its end date isn't strictly in the
+            // future, so the cache from an earlier fetch is the only place
+            // it survives — see AlmanacBook.received. A save that wipes the
+            // cache on every call (what every Sync Now click and every field
+            // blur used to do, whether or not anything changed) throws that
+            // constraint away right when it's needed.
+            let fake = FakeAlmanac()
+            fake.constraints = [constraint(name: "Ends today", start: day("2026-06-17"))]
+            let state = connected(fake, storageDirectory: directory)
+            state.setAlmanacTimeOffEnabled(true)
+            await state.refreshAlmanac(force: true)
+            expect(state.almanac.constraints.count == 1, "the constraint synced")
+
+            // Almanac stops returning it from here on, the way it would once
+            // today passes its end date — the cache is now the only copy.
+            fake.constraints = []
+            try state.saveAlmanacCredentials(apiKey: "almanac-key", email: email)
+
+            expect(
+                state.almanac.constraints.count == 1,
+                "re-saving the same identity shouldn't have cleared the cache, got \(state.almanac.constraints.count)"
+            )
+        }
+    }
+
+    await test("saving a genuinely different identity does clear the cache") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeAlmanac()
+            fake.constraints = [constraint(name: "Someone else's", start: day("2026-06-17"))]
+            let state = connected(fake, storageDirectory: directory)
+            state.setAlmanacTimeOffEnabled(true)
+            await state.refreshAlmanac(force: true)
+            expect(state.almanac.constraints.count == 1, "the constraint synced")
+
+            try state.saveAlmanacCredentials(apiKey: "a-different-key", email: "someone.else@rolemodelsoftware.com")
+
+            expect(
+                state.almanac.constraints.isEmpty,
+                "a new identity has no business keeping the old one's cached time off"
+            )
         }
     }
 }
