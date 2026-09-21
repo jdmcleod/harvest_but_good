@@ -181,14 +181,19 @@ public final class AppState {
     /// knows about. Falls back to the hand-set weekday goal, unscaled,
     /// whenever neither switch is on or Almanac has nothing to say yet.
     public func goal(forDay day: Date) -> DayGoal? {
-        almanacGoal(forDay: day) ?? goalSettings.goal(for: Weekday(day))
+        switch almanacOverride(forDay: day) {
+        case .some(let goal): return goal
+        case .none: return goalSettings.goal(for: Weekday(day))
+        }
     }
 
-    /// Nil unless at least one Almanac switch is on, so a plain hand-set goal
-    /// falls straight through to `goal(forDay:)`'s fallback untouched. Also
-    /// nil on a weekend or a day scaled down to nothing: `hours > 0` is this
-    /// type's own definition of "a goal," matching `DayGoal.isSet`.
-    private func almanacGoal(forDay day: Date) -> DayGoal? {
+    /// Whether Almanac has anything to say about `day`, and if so what —
+    /// `DayGoal?` doesn't say enough on its own here, since "Almanac says
+    /// zero, you're off" and "Almanac has nothing to say, use the fallback"
+    /// are both a bare `nil` and need telling apart. The outer `nil` (no
+    /// case matched) means the latter; `.some(goal)`, `goal` itself possibly
+    /// nil, means the former.
+    private func almanacOverride(forDay day: Date) -> DayGoal?? {
         guard goalSettings.almanacPaceEnabled || goalSettings.almanacTimeOffEnabled else { return nil }
         let manualGoal = goalSettings.goal(for: Weekday(day))
 
@@ -209,11 +214,14 @@ public final class AppState {
         } else {
             hours = baseHours
         }
-        guard hours > 0 else { return nil }
+        // Zero is a real answer here — a day off — not "nothing to say," so
+        // it comes back as .some(nil) rather than falling through to the
+        // manual goal it would otherwise be indistinguishable from.
+        guard hours > 0 else { return .some(nil) }
 
         // Almanac has no notion of breaks — keep whatever the hand-set goal
         // for the weekday says, if anything.
-        return DayGoal(hours: hours, breakHours: manualGoal?.breakHours ?? 0)
+        return .some(DayGoal(hours: hours, breakHours: manualGoal?.breakHours ?? 0))
     }
 
     /// The name of whichever Almanac time off is shaping `day`'s goal, for the
@@ -1017,14 +1025,20 @@ public final class AppState {
         stop()
     }
 
-    /// Saves Almanac's key and email alongside the Harvest credentials, and
-    /// clears the cached pace so the next sync fetches fresh under the new
-    /// identity. Does nothing without Harvest credentials already in
-    /// place — Almanac is a supplement to what this app is for, not a way
-    /// into it on its own.
+    /// Saves Almanac's key and email alongside the Harvest credentials.
+    /// Clears the cached pace and time off only when the identity actually
+    /// changed — re-saving the same key and email is what happens on every
+    /// Sync Now click and every time a field loses focus, and a same-day
+    /// constraint only survives in the cache because Almanac's own API stops
+    /// returning it once its end date is today; clearing on every no-op save
+    /// threw that away right when it mattered. Does nothing without Harvest
+    /// credentials already in place — Almanac is a supplement to what this
+    /// app is for, not a way into it on its own.
     func saveAlmanacCredentials(apiKey: String, email: String, baseURL: String = AlmanacCredentials.defaultBaseURL) throws {
         guard var credentials else { return }
-        credentials.almanac = AlmanacCredentials(baseURL: baseURL, apiKey: apiKey, email: email)
+        let updated = AlmanacCredentials(baseURL: baseURL, apiKey: apiKey, email: email)
+        guard credentials.almanac != updated else { return }
+        credentials.almanac = updated
         try Keychain.shared.save(credentials)
         self.credentials = credentials
         almanac.clear()

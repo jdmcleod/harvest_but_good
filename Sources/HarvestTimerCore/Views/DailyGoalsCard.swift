@@ -185,6 +185,9 @@ private struct AlmanacPaceSection: View {
                         .focused($focused, equals: .email)
                         .onSubmit(commit)
                     status
+                    if state.goalSettings.almanacTimeOffEnabled {
+                        constraintDebugList
+                    }
                 }
             }
         }
@@ -246,6 +249,31 @@ private struct AlmanacPaceSection: View {
         }
         guard !parts.isEmpty else { return syncing ? "Syncing…" : "Not synced yet" }
         return parts.joined(separator: " · ")
+    }
+
+    /// Every synced constraint with exactly what was parsed out of it —
+    /// temporary, while a scaled goal not matching a constraint's own times
+    /// is more likely to be a decode problem than anything else.
+    private var constraintDebugList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(state.almanac.constraints.enumerated()), id: \.offset) { _, constraint in
+                Text(constraintDebugLine(constraint))
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func constraintDebugLine(_ constraint: AlmanacConstraint) -> String {
+        let times: String
+        if constraint.isPartialDay, let start = constraint.startTime, let end = constraint.endTime {
+            times = "\(Hours.formatted(start.hours))–\(Hours.formatted(end.hours))"
+        } else {
+            times = "all day"
+        }
+        return "\(constraint.name ?? "?"): \(constraint.startDate)–\(constraint.endDate) · \(times)"
+            + " · partial=\(constraint.isPartialDay) · billableOnly=\(constraint.billableOnly)"
     }
 
     private func load() {
