@@ -154,9 +154,11 @@ private struct AlmanacPaceSection: View {
                 TextField("Almanac API key", text: $apiKey)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused, equals: .apiKey)
+                    .onSubmit(commit)
                 TextField("Email at Almanac", text: $email)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused, equals: .email)
+                    .onSubmit(commit)
                 status
             }
         }
@@ -173,26 +175,30 @@ private struct AlmanacPaceSection: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             } else if let pace = state.almanac.pace {
-                Text("Pace \(Hours.formatted(pace.suggestedDailyPace))/day")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                // Everything Almanac sent, while this is new enough that a
+                // surprising number is more likely than not.
+                Text(
+                    "Pace \(Hours.formatted(pace.suggestedDailyPace))/day"
+                        + " · target \(Hours.formatted(pace.target))"
+                        + " · worked \(Hours.formatted(pace.worked))"
+                        + " · remaining \(Hours.formatted(pace.remaining))"
+                        + " · person #\(state.almanac.personId ?? "?")"
+                )
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
             } else {
                 Text(syncing ? "Syncing…" : "Not synced yet")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Sync Now") {
-                syncing = true
-                Task {
-                    await state.refreshAlmanac(force: true)
-                    syncing = false
-                }
-            }
-            .buttonStyle(.link)
-            .font(.caption)
-            .disabled(apiKey.isEmpty || email.isEmpty)
+            // Saves first regardless of what's focused — clicking this
+            // shouldn't depend on AppKit having noticed a field lost focus.
+            Button("Sync Now", action: commit)
+                .buttonStyle(.link)
+                .font(.caption)
+                .disabled(apiKey.isEmpty || email.isEmpty)
         }
     }
 
@@ -202,12 +208,20 @@ private struct AlmanacPaceSection: View {
         email = almanac?.email ?? ""
     }
 
+    /// Saves what's in the fields, and syncs right away so the status line
+    /// doesn't sit stale until the next scheduled sync. Reachable from losing
+    /// focus, pressing Return, or the Sync Now button, so nothing typed here
+    /// depends on AppKit deciding a field has lost focus.
     private func commit() {
         guard !apiKey.isEmpty, !email.isEmpty else {
             if apiKey.isEmpty, email.isEmpty { state.removeAlmanacCredentials() }
             return
         }
         try? state.saveAlmanacCredentials(apiKey: apiKey, email: email)
-        Task { await state.refreshAlmanac(force: true) }
+        syncing = true
+        Task {
+            await state.refreshAlmanac(force: true)
+            syncing = false
+        }
     }
 }

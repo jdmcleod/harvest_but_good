@@ -55,8 +55,14 @@ public struct AlmanacAPI: AlmanacClient {
     public func totalPace(personId: String) async throws -> AlmanacPace {
         struct PersonResponse: Decodable { let totalPace: AlmanacPace }
         struct Response: Decodable { let person: PersonResponse? }
+        // `id` is asked for and thrown away, not just for style: Almanac's
+        // resolver (`QueryType#smart_select`) selects only the Person columns
+        // a query names, and `totalPace` isn't a column. Ask for nothing else
+        // and the row Almanac hands `PersonPace` has no id on it either, so
+        // every figure it computes from `person.targets`/`person.constraints`
+        // comes back a silent zero instead of a real answer or an error.
         let query = """
-        { person(id: "\(personId)") { totalPace { \
+        { person(id: "\(personId)") { id totalPace { \
         suggestedDailyPace target worked remaining daysIntoReport } } }
         """
         let response: Response = try await graphQL(query: query)
