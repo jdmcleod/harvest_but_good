@@ -129,26 +129,7 @@ struct SetupView: View {
                             .fill(Color(nsColor: .controlBackgroundColor))
                     )
 
-                    HStack(spacing: 8) {
-                        Image(systemName: "paintpalette.fill")
-                            .foregroundStyle(palette.accent)
-                            .frame(width: 24, height: 24)
-                        Text("Kattsafe Colors")
-                            .font(.headline)
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { state.colorTheme == .kattsafe },
-                            set: { state.colorTheme = $0 ? .kattsafe : .harvest }
-                        ))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                    )
+                    CustomColorsCard()
 
                     DailyGoalsCard()
 

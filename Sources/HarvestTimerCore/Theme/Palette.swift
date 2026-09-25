@@ -2,8 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Every color the app draws with, named by the job it does rather than the
-/// hue, so a color scheme is just a different set of answers. The schemes
-/// themselves live in `ColorSchemes.swift`.
+/// hue, so a color scheme is just a different set of answers.
 public struct Palette: Sendable {
     /// The strip across the top of the window, and the window behind it.
     public let header: NSColor
@@ -33,6 +32,24 @@ public struct Palette: Sendable {
     /// reads the same in the list, the chips, and the timeline.
     public let projectColors: [Color]
 
+    public static let harvest = Palette(
+        header: NSColor(hex: 0xF36C00),
+        accent: Color(hex: 0xF36C00),
+        start: Color(hex: 0x3E8542),
+        selection: .accentColor,
+        success: .green,
+        warning: .yellow,
+        danger: .red,
+        favorite: .yellow,
+        outline: AnyShapeStyle(.quaternary),
+        fieldOutline: AnyShapeStyle(.separator),
+        breakOutline: Color.secondary.opacity(0.35),
+        track: Color.primary.opacity(0.08),
+        idleControl: .secondary,
+        emphasis: .primary,
+        projectColors: [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown]
+    )
+
     public var headerColor: Color { Color(nsColor: header) }
 
     public func forProject(_ projectId: Int64) -> Color {
@@ -44,20 +61,6 @@ public struct Palette: Sendable {
             return forProject(favorite.projectId)
         }
         return projectColors[index]
-    }
-}
-
-/// Which `Palette` the app is wearing. Stored by raw value, so renaming a
-/// case strands whoever had it picked back on Harvest.
-public enum ColorTheme: String, CaseIterable, Sendable {
-    case harvest
-    case kattsafe
-
-    public var palette: Palette {
-        switch self {
-        case .harvest: return .harvest
-        case .kattsafe: return .kattsafe
-        }
     }
 }
 
@@ -73,6 +76,17 @@ public extension EnvironmentValues {
 }
 
 extension NSColor {
+    /// Opacity is dropped: every stored color is a solid one.
+    var hex: UInt32 {
+        guard let rgb = usingColorSpace(.sRGB) else { return 0 }
+        func channel(_ value: CGFloat) -> UInt32 {
+            UInt32((min(max(value, 0), 1) * 255).rounded())
+        }
+        return channel(rgb.redComponent) << 16
+            | channel(rgb.greenComponent) << 8
+            | channel(rgb.blueComponent)
+    }
+
     convenience init(hex: UInt32, alpha: CGFloat = 1) {
         self.init(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
