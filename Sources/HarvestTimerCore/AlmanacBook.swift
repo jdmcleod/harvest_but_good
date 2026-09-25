@@ -5,13 +5,17 @@ import Foundation
 /// makes the calls and hands the results here; the decisions live in this
 /// type — the same split `BudgetBook` makes for Harvest's budgets.
 public struct AlmanacBook: Equatable, Codable, Sendable {
-    public static let refreshInterval: TimeInterval = 15 * 60
+    /// 7am for the day ahead, and 5pm because `next_constraints` never
+    /// returns time off ending today: a day off tomorrow booked after the
+    /// morning fetch has to be caught that evening, while it's still
+    /// "tomorrow", or it is never seen at all.
+    public static let schedule = RefreshSchedule(hours: [7, 17])
 
     public private(set) var personId: String?
     public private(set) var pace: AlmanacPace?
     public private(set) var constraints: [AlmanacConstraint] = []
     /// Internal, not private, so a test can put it in the past instead of
-    /// waiting out the refresh interval.
+    /// waiting for the next scheduled time.
     var lastFetchAt: Date?
     /// A key or email Almanac has refused. Turns the feature off for the
     /// session rather than asking again every sync.
@@ -19,10 +23,15 @@ public struct AlmanacBook: Equatable, Codable, Sendable {
 
     public init() {}
 
-    func needsRefresh(force: Bool, now: Date = .now) -> Bool {
+    func needsRefresh(
+        force: Bool,
+        now: Date = .now,
+        schedule: RefreshSchedule = AlmanacBook.schedule
+    ) -> Bool {
         guard !isUnavailable else { return false }
         guard !force, let lastFetchAt else { return true }
-        return now.timeIntervalSince(lastFetchAt) >= Self.refreshInterval
+        guard let latest = schedule.latest(atOrBefore: now) else { return true }
+        return lastFetchAt < latest
     }
 
     /// Folds in a fresh answer. Each part is optional and only touched when

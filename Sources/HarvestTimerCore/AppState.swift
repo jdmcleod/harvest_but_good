@@ -57,6 +57,7 @@ public final class AppState {
     public static let afkInterval = Duration.seconds(10)
     private let syncTicker = Ticker(every: AppState.syncInterval)
     private let afkTicker = Ticker(every: AppState.afkInterval)
+    private let almanacTicker = ScheduledTicker(schedule: AlmanacBook.schedule)
 
     var needsSetup: Bool { credentials == nil }
 
@@ -311,11 +312,13 @@ public final class AppState {
             await self?.rollTimerIntoToday()
         }
         afkTicker.start { [weak self] in self?.afkTick() }
+        almanacTicker.start { [weak self] in await self?.refreshAlmanac() ?? true }
     }
 
     public func stop() {
         syncTicker.stop()
         afkTicker.stop()
+        almanacTicker.stop()
     }
 
     /// One turn of the AFK loop: move the clock on, roll the view over if the
@@ -398,7 +401,6 @@ public final class AppState {
             syncError = nil
         }
         await loadProjectBudgets()
-        await refreshAlmanac()
     }
 
     /// Internal, so a test can put the last fetch in the past instead of
@@ -428,20 +430,23 @@ public final class AppState {
     }
 
     /// Fetches whatever the two Almanac switches call for — the pace, the
-    /// time off, or both — at most once per refresh interval unless `force`
-    /// says otherwise. Only asks Almanac for what's actually switched on: a
+    /// time off, or both — at most once per slot in `AlmanacBook.schedule`
+    /// unless `force` says otherwise. Runs on its own ticker, not the Harvest
+    /// sync. Returns false only when a fetch was tried and failed for a
+    /// reason worth retrying soon, like the network being down. Only asks Almanac for what's actually switched on: a
     /// time-off-only setup never needs a person id resolved at all, since
     /// `constraints(email:)` looks up by email on its own. Mirrors
     /// `loadProjectBudgets`: a rejected key turns both off quietly rather
     /// than asking again every sync, and any other failure keeps whatever
     /// was cached before.
-    func refreshAlmanac(force: Bool = false) async {
+    @discardableResult
+    func refreshAlmanac(force: Bool = false) async -> Bool {
         let wantsPace = goalSettings.almanacPaceEnabled
         let wantsTimeOff = goalSettings.almanacTimeOffEnabled
         guard wantsPace || wantsTimeOff,
               let email = credentials?.almanac?.email,
               let almanacAPI,
-              almanac.needsRefresh(force: force) else { return }
+              almanac.needsRefresh(force: force) else { return true }
         do {
             var personId: String?
             var pace: AlmanacPace?
@@ -453,11 +458,14 @@ public final class AppState {
             let constraints = wantsTimeOff ? try await almanacAPI.constraints(email: email) : nil
             almanac.received(personId: personId, pace: pace, constraints: constraints)
             almanacStore.save(almanac)
+            return true
         } catch AlmanacAPIError.unauthorized {
             almanac.refused()
             almanacStore.save(almanac)
+            return true
         } catch {
             // Keep whatever the cache already has.
+            return false
         }
     }
 
