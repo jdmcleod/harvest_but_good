@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SetupView: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     var isSheet = false
@@ -80,10 +81,10 @@ struct SetupView: View {
                         switch validationResult {
                         case .success(let message):
                             Label(message, systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(palette.success)
                         case .failure(let message):
                             Label(message, systemImage: "xmark.circle.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(palette.danger)
                         case nil:
                             EmptyView()
                         }
@@ -97,7 +98,7 @@ struct SetupView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Image(systemName: "moon.zzz.fill")
-                                .foregroundStyle(Color.harvest)
+                                .foregroundStyle(palette.accent)
                                 .frame(width: 24, height: 24)
                             Text("Idle Detection")
                                 .font(.headline)
@@ -120,6 +121,27 @@ struct SetupView: View {
                             }
                         }
                         .padding(.leading, 32)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "paintpalette.fill")
+                            .foregroundStyle(palette.accent)
+                            .frame(width: 24, height: 24)
+                        Text("Kattsafe Colors")
+                            .font(.headline)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { state.colorTheme == .kattsafe },
+                            set: { state.colorTheme = $0 ? .kattsafe : .harvest }
+                        ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
@@ -164,7 +186,7 @@ struct SetupView: View {
                 Text("\(number)")
                     .font(.callout.weight(.bold))
                     .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color.harvest.opacity(0.15)))
+                    .background(Circle().fill(palette.accent.opacity(0.15)))
                 Text(title)
                     .font(.headline)
             }

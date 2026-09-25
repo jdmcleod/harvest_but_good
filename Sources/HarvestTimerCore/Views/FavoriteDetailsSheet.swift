@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FavoriteDetailsSheet: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     let favorite: Favorite
@@ -88,8 +89,8 @@ struct FavoriteDetailsSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack(spacing: 6) {
-                swatch(nil, color: Color.forProject(favorite.projectId))
-                ForEach(Array(Color.projectPalette.enumerated()), id: \.offset) { index, color in
+                swatch(nil, color: palette.forProject(favorite.projectId))
+                ForEach(Array(palette.projectColors.enumerated()), id: \.offset) { index, color in
                     swatch(index, color: color)
                 }
             }
@@ -113,7 +114,7 @@ struct FavoriteDetailsSheet: View {
             }
             .overlay {
                 Circle()
-                    .strokeBorder(isSelected ? Color.primary : .clear, lineWidth: 2)
+                    .strokeBorder(isSelected ? palette.emphasis : .clear, lineWidth: 2)
                     .padding(-3)
             }
             .contentShape(Circle())
@@ -128,7 +129,7 @@ struct FavoriteDetailsSheet: View {
                 .padding(6)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.harvest)
+                        .fill(palette.accent)
                 )
             Text("Preview")
                 .font(.caption2)

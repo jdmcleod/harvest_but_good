@@ -8,6 +8,7 @@ private struct TimelineScrollOffsetKey: PreferenceKey {
 }
 
 struct DayTimelineView: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     @State private var zoom: CGFloat = 1
     @State private var pendingZoom: CGFloat?
@@ -132,7 +133,7 @@ struct DayTimelineView: View {
                     .fill(Color.primary.opacity(0.05))
                     .overlay(
                         RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(.quaternary, lineWidth: 1)
+                            .strokeBorder(palette.outline, lineWidth: 1)
                     )
             )
             .frame(maxWidth: .infinity, alignment: .center)
@@ -286,7 +287,7 @@ struct DayTimelineView: View {
         let isSelected = state.selectedEntryId == block.entryId
 
         RoundedRectangle(cornerRadius: 4)
-            .fill(Color.forProject(block.projectId).opacity(isSelected ? 0.9 : 0.65))
+            .fill(palette.forProject(block.projectId).opacity(isSelected ? 0.9 : 0.65))
             .overlay {
                 if isModified {
                     StripeTexture()
@@ -317,7 +318,7 @@ struct DayTimelineView: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(isSelected ? Color.primary : .clear, lineWidth: 2)
+                    .strokeBorder(isSelected ? palette.emphasis : .clear, lineWidth: 2)
             )
             .frame(width: blockWidth, height: blockHeight)
             .position(x: labelWidth + 12 + blockWidth / 2, y: top + blockHeight / 2)
@@ -340,7 +341,7 @@ struct DayTimelineView: View {
             .fill(Color.secondary.opacity(0.08))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .strokeBorder(palette.breakOutline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             )
             .overlay {
                 if blockHeight >= 16 {
@@ -398,10 +399,10 @@ struct DayTimelineView: View {
         let y = yPosition(for: state.now, height: height)
         HStack(spacing: 0) {
             Circle()
-                .fill(.red)
+                .fill(palette.danger)
                 .frame(width: 7, height: 7)
             Rectangle()
-                .fill(.red)
+                .fill(palette.danger)
                 .frame(height: 1.5)
         }
         .frame(width: width - labelWidth - 8)

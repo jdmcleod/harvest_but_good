@@ -7,6 +7,7 @@ import SwiftUI
 /// A day with no goal still gets a row rather than nothing, so the list above
 /// does not change height as you move across the week.
 struct GoalFooter: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     let openSettings: () -> Void
 
@@ -32,9 +33,9 @@ struct GoalFooter: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.primary.opacity(0.08))
+                    .fill(palette.track)
                 Capsule()
-                    .fill(Color.harvest)
+                    .fill(palette.accent)
                     .frame(width: geometry.size.width * progress.fraction)
             }
         }
@@ -97,7 +98,7 @@ struct GoalFooter: View {
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(.quaternary, lineWidth: 1)
+                        .strokeBorder(palette.outline, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -115,7 +116,7 @@ struct GoalFooter: View {
             Text(state.runningEntry == nil ? "Done \(time)" : "Until \(time)")
                 .font(.callout.weight(.medium))
                 .monospacedDigit()
-                .foregroundStyle(Color.harvest)
+                .foregroundStyle(palette.accent)
                 .help(
                     state.runningEntry == nil
                         ? "When the day ends if you start now"
@@ -124,7 +125,7 @@ struct GoalFooter: View {
         } else {
             Text("Pace met")
                 .font(.callout.weight(.medium))
-                .foregroundStyle(Color.harvest)
+                .foregroundStyle(palette.accent)
         }
     }
 

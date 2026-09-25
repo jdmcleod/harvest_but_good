@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WeekHeader: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     @Binding var showingSettings: Bool
 
@@ -48,7 +49,7 @@ struct WeekHeader: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .foregroundStyle(.white)
-        .background(Color.harvest.ignoresSafeArea(edges: .top))
+        .background(palette.headerColor.ignoresSafeArea(edges: .top))
     }
 
     private func shiftWeek(by weeks: Int) {

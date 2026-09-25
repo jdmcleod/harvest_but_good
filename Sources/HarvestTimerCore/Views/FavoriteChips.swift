@@ -91,6 +91,7 @@ struct FavoriteChips: View {
 }
 
 struct FavoriteChipLabel: View {
+    @Environment(\.palette) private var palette
     let favorite: Favorite
     let filled: Bool
 
@@ -99,16 +100,17 @@ struct FavoriteChipLabel: View {
             .font(.system(size: 8, weight: .bold, design: .rounded))
             .rotationEffect(.degrees(90))
             .fixedSize()
-            .foregroundStyle(filled ? .white : Color.forFavorite(favorite))
+            .foregroundStyle(filled ? .white : palette.forFavorite(favorite))
             .frame(width: FavoriteOrder.chipWidth, height: 40)
             .background(
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(filled ? Color.forFavorite(favorite).opacity(0.9) : Color.white.opacity(0.9))
+                    .fill(filled ? palette.forFavorite(favorite).opacity(0.9) : Color.white.opacity(0.9))
             )
     }
 }
 
 private struct FavoriteChip: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     let favorite: Favorite
     let index: Int
@@ -161,7 +163,7 @@ private struct FavoriteChip: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(.quaternary)
+                            .strokeBorder(palette.outline)
                     )
                     .fixedSize()
                     .offset(y: 30)

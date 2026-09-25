@@ -17,6 +17,7 @@ public struct RootView: View {
             minWidth: 720, idealWidth: 960, maxWidth: .infinity,
             minHeight: 480, idealHeight: 640, maxHeight: .infinity
         )
-        .tint(.harvest)
+        .tint(state.palette.accent)
+        .environment(\.palette, state.palette)
     }
 }

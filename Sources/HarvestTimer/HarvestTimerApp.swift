@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = .harvest
+        followColorTheme()
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.addTitlebarAccessoryViewController(makeTodayAccessory())
@@ -55,6 +55,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         state.onAFKDetected = { [weak self] in self?.showWindow() }
         showWindow()
+    }
+
+    /// The window's own background shows through the transparent titlebar,
+    /// so it has to track the theme by hand — SwiftUI's environment stops at
+    /// the hosting view and never reaches the NSWindow.
+    private func followColorTheme() {
+        withObservationTracking {
+            window.backgroundColor = state.palette.header
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followColorTheme() }
+        }
     }
 
     /// The back-to-today button. A titlebar accessory rather than part of
@@ -212,7 +223,7 @@ private struct StatusWidget: View {
                 if isRunning {
                     Image(systemName: "pause.circle.fill")
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(Color.white, Color.harvest)
+                        .foregroundStyle(Color.white, state.palette.accent)
                 } else {
                     Image(systemName: "play.circle")
                         .foregroundStyle(Color.primary)
@@ -222,13 +233,13 @@ private struct StatusWidget: View {
         }
     }
 
-    /// Orange is the running colour throughout the app, so the ring earns it
+    /// The accent is the running colour throughout the app, so the ring earns it
     /// only while the clock is going. A stopped timer keeps the ring neutral,
     /// where it reads as chrome rather than as something happening.
     ///
     /// `.primary` rather than white: nothing tints the menu bar behind this, so
     /// a fixed white would vanish on a light one.
-    private var accent: Color { isRunning ? .harvest : .primary }
+    private var accent: Color { isRunning ? state.palette.accent : .primary }
 
     private func goalHelp(_ progress: GoalProgress) -> String {
         if progress.isMet {

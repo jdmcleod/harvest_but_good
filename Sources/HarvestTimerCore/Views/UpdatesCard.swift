@@ -6,6 +6,7 @@ import SwiftUI
 /// Checks only when asked. An unprompted check would either nag or fail
 /// quietly, and neither is worth spending someone's rate limit on.
 struct UpdatesCard: View {
+    @Environment(\.palette) private var palette
     /// Injectable so a preview or a test can stand one in; the app takes the
     /// real one, which reaches GitHub.
     var checker = UpdateChecker()
@@ -19,7 +20,7 @@ struct UpdatesCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle")
-                    .foregroundStyle(Color.harvest)
+                    .foregroundStyle(palette.accent)
                     .frame(width: 24, height: 24)
                 Text("Updates")
                     .font(.headline)
@@ -62,18 +63,18 @@ struct UpdatesCard: View {
     private var result: some View {
         if let failure {
             Label(failure, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(palette.warning)
         } else {
             switch status {
             case .upToDate:
                 Label("Up to date", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(palette.success)
             case .behind(let commits):
                 Label(
                     "\(commits) commit\(commits == 1 ? "" : "s") behind",
                     systemImage: "arrow.down.circle.fill"
                 )
-                .foregroundStyle(Color.harvest)
+                .foregroundStyle(palette.accent)
             case .offBranch(let behind):
                 // Built from a branch of its own, so "behind" would be a lie
                 // even when the branch does hold commits this build lacks.

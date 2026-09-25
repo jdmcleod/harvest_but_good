@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ProjectTaskPickerSheet: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     let title: String
@@ -166,7 +167,7 @@ struct ProjectTaskPickerSheet: View {
             ))
         } label: {
             Image(systemName: isFavorite ? "star.fill" : "star")
-                .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
+                .foregroundStyle(isFavorite ? palette.favorite : Color.secondary)
         }
         .buttonStyle(.plain)
         .pointingCursor()
