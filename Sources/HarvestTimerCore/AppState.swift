@@ -29,10 +29,13 @@ public final class AppState {
     public var afkToleranceMinutes: Int {
         didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
     }
-    public var colorTheme: ColorTheme {
-        didSet { UserDefaults.standard.set(colorTheme.rawValue, forKey: Self.colorThemeKey) }
+    public var customColors: CustomColors {
+        didSet {
+            guard let data = try? JSONEncoder().encode(customColors) else { return }
+            UserDefaults.standard.set(data, forKey: Self.customColorsKey)
+        }
     }
-    public var palette: Palette { colorTheme.palette }
+    public var palette: Palette { customColors.palette }
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -45,10 +48,11 @@ public final class AppState {
     /// can put it in the past instead of waiting for midnight.
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
-    private static let colorThemeKey = "colorTheme"
+    private static let customColorsKey = "customColors"
     private var currentUserId: Int64?
     private var companyBaseUri: String?
     private let weekCalendar = WeekCalendar()
+    private let credentialStore: CredentialStore
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
     private let breakTitlesStore: BreakTitlesStore
@@ -82,15 +86,16 @@ public final class AppState {
         self.sleepWatch = sleepWatch ?? SleepWatch()
         self.injectedClient = nil
         self.injectedAlmanacClient = nil
+        self.credentialStore = Keychain.shared
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
         self.almanacStore = AlmanacStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
-        colorTheme = UserDefaults.standard.string(forKey: Self.colorThemeKey)
-            .flatMap(ColorTheme.init(rawValue:)) ?? .harvest
-        credentials = Keychain.shared.load()
+        customColors = UserDefaults.standard.data(forKey: Self.customColorsKey)
+            .flatMap { try? JSONDecoder().decode(CustomColors.self, from: $0) } ?? CustomColors()
+        credentials = credentialStore.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
@@ -112,13 +117,14 @@ public final class AppState {
         self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
         self.injectedClient = client
         self.injectedAlmanacClient = almanacClient
+        self.credentialStore = InMemoryCredentialStore()
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         self.goalsStore = GoalsStore(directory: storageDirectory)
         self.almanacStore = AlmanacStore(directory: storageDirectory)
         afkToleranceMinutes = 10
-        colorTheme = .harvest
+        customColors = CustomColors()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
@@ -1019,7 +1025,7 @@ public final class AppState {
         // Carries over whatever Almanac credentials were already saved — this
         // only ever means Harvest's token changed.
         let credentials = Keychain.Credentials(token: token, accountId: accountId, almanac: self.credentials?.almanac)
-        try Keychain.shared.save(credentials)
+        try credentialStore.save(credentials)
         self.credentials = credentials
         currentUserId = nil
         companyBaseUri = nil
@@ -1028,7 +1034,7 @@ public final class AppState {
     }
 
     func removeCredentials() {
-        Keychain.shared.clear()
+        credentialStore.clear()
         credentials = nil
         currentUserId = nil
         companyBaseUri = nil
@@ -1055,7 +1061,7 @@ public final class AppState {
         let updated = AlmanacCredentials(baseURL: baseURL, apiKey: apiKey, email: email)
         guard credentials.almanac != updated else { return }
         credentials.almanac = updated
-        try Keychain.shared.save(credentials)
+        try credentialStore.save(credentials)
         self.credentials = credentials
         almanac.clear()
         almanacStore.save(almanac)
@@ -1064,7 +1070,7 @@ public final class AppState {
     func removeAlmanacCredentials() {
         guard var credentials, credentials.almanac != nil else { return }
         credentials.almanac = nil
-        try? Keychain.shared.save(credentials)
+        try? credentialStore.save(credentials)
         self.credentials = credentials
         almanac.clear()
         almanacStore.save(almanac)
