@@ -89,7 +89,8 @@ So you can run Almanac's pace outright, keep your own hand-typed hours and just 
 
 **Known rough edges**, since this is still an experiment:
 
-- A same-day time-off entry (say, a half day booked for today) can take a sync cycle to show up — Almanac's own API only returns time off that ends *after* today, so the app leans on what it already cached from when that entry was still "tomorrow."
+- Almanac syncs on its own at 7am and 5pm (or on wake, if the Mac was asleep then), not with every Harvest sync. **Sync Now** or flipping a switch fetches right away.
+- Almanac's own API only returns time off that ends *after* today, so today's time off shows only if the app cached it while it was still "tomorrow" — that's what the 5pm sync is for. Time off for today that was booked today won't show up at all.
 - Almanac's pace is quarter-scoped, so the last few days of a quarter can look a little off as the remaining hours run down. There's no year-scoped option — Almanac's own API has no equivalent field for it, only the quarter one.
 - The API key isn't tied to your identity in Almanac — it's your key *and* the email you enter together that determine whose pace and time off come back.
 
