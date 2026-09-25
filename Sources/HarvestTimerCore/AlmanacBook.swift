@@ -29,11 +29,12 @@ public struct AlmanacBook: Equatable, Codable, Sendable {
     /// given, since pace and time off are fetched independently now — asking
     /// for one shouldn't blank out whatever the other already had cached.
     ///
-    /// Constraints are merged by id rather than replaced outright: Almanac's
-    /// `next_constraints` only returns constraints ending *after* today, so a
-    /// same-day half day drops off that list the moment it arrives — merging
-    /// keeps it around from the fetch that saw it while it was still
-    /// tomorrow.
+    /// Almanac's `next_constraints` only returns constraints ending *after*
+    /// today, so for those the fresh answer is the whole truth — anything
+    /// cached but missing from it was cancelled and goes. A constraint ending
+    /// today can't come back from that endpoint at all, so the cached copy
+    /// is kept: a same-day half day would otherwise vanish the moment it
+    /// arrives.
     mutating func received(
         personId: String? = nil,
         pace: AlmanacPace? = nil,
@@ -43,13 +44,12 @@ public struct AlmanacBook: Equatable, Codable, Sendable {
         if let personId { self.personId = personId }
         if let pace { self.pace = pace }
         if let incoming {
-            var merged = Dictionary(uniqueKeysWithValues: constraints.map { ($0.id, $0) })
-            for constraint in incoming { merged[constraint.id] = constraint }
-            // Drop anything that ended a couple of days ago so an edited or
-            // cancelled constraint does not linger on the strength of one old
-            // fetch forever.
-            let cutoff = Day(time.addingTimeInterval(-2 * 24 * 3600))
-            self.constraints = merged.values.filter { $0.endDate >= cutoff }
+            let today = Day(time)
+            let incomingIds = Set(incoming.map(\.id))
+            let endingToday = constraints.filter {
+                !incomingIds.contains($0.id) && $0.endDate == today
+            }
+            self.constraints = endingToday + incoming
         }
         lastFetchAt = time
         isUnavailable = false
