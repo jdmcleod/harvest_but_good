@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AFKPromptView: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     let prompt: AFKPrompt
     @State private var loggingElsewhere = false
@@ -26,7 +27,7 @@ struct AFKPromptView: View {
             .padding(.bottom, -12)
             Image(systemName: "moon.zzz.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(Color.harvest)
+                .foregroundStyle(palette.accent)
             Text("Welcome back")
                 .font(.title2.weight(.semibold))
             VStack(spacing: 4) {

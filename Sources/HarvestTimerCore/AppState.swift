@@ -26,6 +26,10 @@ public final class AppState {
     public var afkToleranceMinutes: Int {
         didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
     }
+    public var colorTheme: ColorTheme {
+        didSet { UserDefaults.standard.set(colorTheme.rawValue, forKey: Self.colorThemeKey) }
+    }
+    public var palette: Palette { colorTheme.palette }
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -38,6 +42,7 @@ public final class AppState {
     /// can put it in the past instead of waiting for midnight.
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
+    private static let colorThemeKey = "colorTheme"
     private var currentUserId: Int64?
     private var companyBaseUri: String?
     private let weekCalendar = WeekCalendar()
@@ -70,6 +75,8 @@ public final class AppState {
         self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
+        colorTheme = UserDefaults.standard.string(forKey: Self.colorThemeKey)
+            .flatMap(ColorTheme.init(rawValue:)) ?? .harvest
         credentials = Keychain.shared.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
@@ -94,6 +101,7 @@ public final class AppState {
         self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         self.goalsStore = GoalsStore(directory: storageDirectory)
         afkToleranceMinutes = 10
+        colorTheme = .harvest
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
