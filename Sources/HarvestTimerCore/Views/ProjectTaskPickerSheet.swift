@@ -64,7 +64,7 @@ struct ProjectTaskPickerSheet: View {
         .padding(20)
         .frame(width: 460)
         .task {
-            await state.loadProjectAssignments()
+            await state.loadProjectAssignments(force: true)
             applyInitialSelection()
         }
     }
