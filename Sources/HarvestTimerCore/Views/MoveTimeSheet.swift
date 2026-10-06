@@ -52,7 +52,7 @@ struct MoveTimeSheet: View {
         }
         .padding(20)
         .frame(width: 460)
-        .task { await state.loadProjectAssignments() }
+        .task { await state.loadProjectAssignments(force: true) }
         .onAppear { amountText = Hours.formatted(sourceHours) }
     }
 
