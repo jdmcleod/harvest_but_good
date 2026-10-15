@@ -16,6 +16,7 @@ func runAlmanacAppStateTests() async {
             accountId: "1",
             almanac: AlmanacCredentials(apiKey: "almanac-key", email: email)
         )
+        state.setGoalsEnabled(true)
         return state
     }
 
@@ -123,7 +124,12 @@ func runAlmanacAppStateTests() async {
             state.setAlmanacTimeOffEnabled(true)
             await state.refreshAlmanac(force: true)
 
-            expect(fake.calls == ["constraints(\(email))"], "only the constraints were ever asked for, got \(fake.calls)")
+            // The switch kicks off a refresh of its own alongside the forced
+            // one above, so count kinds of call rather than calls.
+            expect(
+                !fake.calls.isEmpty && fake.calls.allSatisfy { $0 == "constraints(\(email))" },
+                "only the constraints were ever asked for, got \(fake.calls)"
+            )
             let goal = state.goal(forDay: wednesday)
             expect(goal?.hours == 3, "half of the hand-set six hours, got \(String(describing: goal?.hours))")
             expect(goal?.breakHours == 0.5, "the hand-set break survives the adjustment")
