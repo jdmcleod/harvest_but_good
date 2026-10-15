@@ -70,6 +70,21 @@ func runAppStateTests() async {
         }
     }
 
+    await test("custom colors come back on the next launch") {
+        try await withTemporaryDirectory { directory in
+            let suite = "HarvestTimerTests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+
+            let first = AppState(client: FakeHarvest(), storageDirectory: directory, defaults: defaults)
+            first.customColors.isEnabled = true
+            first.customColors.accent = 0x123456
+
+            let second = AppState(client: FakeHarvest(), storageDirectory: directory, defaults: defaults)
+            expect(second.customColors == first.customColors, "got \(second.customColors)")
+        }
+    }
+
     await test("today is only the day the clock is in") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)

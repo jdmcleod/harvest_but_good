@@ -18,6 +18,18 @@ public struct CustomColors: Codable, Equatable, Sendable {
 
     public init() {}
 
+    /// Every field falls back to its default, so a saved blob from before a
+    /// pick was added still loads instead of wiping the others.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.defaults
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? defaults.isEnabled
+        header = try container.decodeIfPresent(UInt32.self, forKey: .header) ?? defaults.header
+        accent = try container.decodeIfPresent(UInt32.self, forKey: .accent) ?? defaults.accent
+        start = try container.decodeIfPresent(UInt32.self, forKey: .start) ?? defaults.start
+        highlight = try container.decodeIfPresent(UInt32.self, forKey: .highlight) ?? defaults.highlight
+    }
+
     public var palette: Palette {
         guard isEnabled else { return .harvest }
         return Palette(
@@ -32,6 +44,7 @@ public struct CustomColors: Codable, Equatable, Sendable {
             outline: AnyShapeStyle(Color(hex: accent, opacity: 0.3)),
             fieldOutline: AnyShapeStyle(Color(hex: accent, opacity: 0.3)),
             breakOutline: Color(hex: highlight, opacity: 0.7),
+            breakFill: Color(hex: highlight, opacity: 0.08),
             track: Color(hex: accent, opacity: 0.3),
             idleControl: Color(hex: accent),
             emphasis: Color(hex: highlight),

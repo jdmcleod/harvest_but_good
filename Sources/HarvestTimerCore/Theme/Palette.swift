@@ -22,6 +22,8 @@ public struct Palette: Sendable {
     public let fieldOutline: AnyShapeStyle
     /// The dashed edge of a break on the timeline.
     public let breakOutline: Color
+    /// The inside of a break on the timeline.
+    public let breakFill: Color
     /// The empty part of the goal bar.
     public let track: Color
     /// A play button on an entry that isn't running.
@@ -44,6 +46,7 @@ public struct Palette: Sendable {
         outline: AnyShapeStyle(.quaternary),
         fieldOutline: AnyShapeStyle(.separator),
         breakOutline: Color.secondary.opacity(0.35),
+        breakFill: Color.secondary.opacity(0.08),
         track: Color.primary.opacity(0.08),
         idleControl: .secondary,
         emphasis: .primary,

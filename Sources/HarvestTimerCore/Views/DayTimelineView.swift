@@ -338,7 +338,7 @@ struct DayTimelineView: View {
         let title = state.breakTitle(forBreakId: breakBlock.id)
 
         RoundedRectangle(cornerRadius: 4)
-            .fill(Color.secondary.opacity(0.08))
+            .fill(palette.breakFill)
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(palette.breakOutline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))

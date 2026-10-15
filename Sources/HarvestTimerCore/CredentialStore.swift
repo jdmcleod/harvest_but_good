@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where `AppState` keeps the Harvest and Almanac credentials. The app uses
+/// Where `AppState` keeps the Harvest credentials. The app uses
 /// the Keychain; tests use `InMemoryCredentialStore`, so a test run can never
 /// read or overwrite the credentials the real app signed in with.
 protocol CredentialStore {

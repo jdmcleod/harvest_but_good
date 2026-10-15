@@ -29,6 +29,35 @@ func runCustomColorsTests() {
         expect(colors.palette.header.hex == 0x123456, "picked header once on")
     }
 
+    test("each pick reaches every color that follows it") {
+        var colors = CustomColors()
+        colors.isEnabled = true
+        colors.header = 0x111111
+        colors.accent = 0x222222
+        colors.start = 0x333333
+        colors.highlight = 0x444444
+        let palette = colors.palette
+        let hex = CustomColors.hex(of:)
+        expect(palette.header.hex == 0x111111, "header")
+        expect(hex(palette.accent) == 0x222222, "accent")
+        expect(hex(palette.track) == 0x222222, "track follows accent")
+        expect(hex(palette.idleControl) == 0x222222, "idle control follows accent")
+        expect(hex(palette.start) == 0x333333, "start")
+        expect(hex(palette.selection) == 0x444444, "selection follows highlight")
+        expect(hex(palette.emphasis) == 0x444444, "emphasis follows highlight")
+        expect(hex(palette.breakOutline) == 0x444444, "break edge follows highlight")
+        expect(hex(palette.breakFill) == 0x444444, "break fill follows highlight")
+    }
+
+    test("a save from before a pick existed keeps the picks it has") {
+        let data = Data(#"{"isEnabled":true,"accent":1193046}"#.utf8)
+        let loaded = try JSONDecoder().decode(CustomColors.self, from: data)
+        expect(loaded.isEnabled, "still on")
+        expect(loaded.accent == 0x123456, "accent kept")
+        expect(loaded.header == CustomColors.defaults.header, "missing header takes the default")
+        expect(loaded.highlight == CustomColors.defaults.highlight, "missing highlight takes the default")
+    }
+
     test("the project color count matches Harvest's") {
         // A favorite's chosen color is saved as an index, so switching must
         // land it on the same slot rather than off the end.

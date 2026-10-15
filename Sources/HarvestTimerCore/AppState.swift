@@ -24,12 +24,12 @@ public final class AppState {
     public var syncError: String?
     public var afkPrompt: AFKPrompt?
     public var afkToleranceMinutes: Int {
-        didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
+        didSet { defaults.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
     }
     public var customColors: CustomColors {
         didSet {
             guard let data = try? JSONEncoder().encode(customColors) else { return }
-            UserDefaults.standard.set(data, forKey: Self.customColorsKey)
+            defaults.set(data, forKey: Self.customColorsKey)
         }
     }
     public var palette: Palette { customColors.palette }
@@ -50,6 +50,7 @@ public final class AppState {
     private var companyBaseUri: String?
     private let weekCalendar = WeekCalendar()
     private let credentialStore: CredentialStore
+    private let defaults: UserDefaults
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
     private let breakTitlesStore: BreakTitlesStore
@@ -75,13 +76,13 @@ public final class AppState {
         self.sleepWatch = sleepWatch ?? SleepWatch()
         self.injectedClient = nil
         self.credentialStore = Keychain.shared
+        self.defaults = .standard
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
-        afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
-        customColors = UserDefaults.standard.data(forKey: Self.customColorsKey)
-            .flatMap { try? JSONDecoder().decode(CustomColors.self, from: $0) } ?? CustomColors()
+        afkToleranceMinutes = Self.loadAFKTolerance(from: defaults)
+        customColors = Self.loadCustomColors(from: defaults)
         credentials = credentialStore.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
@@ -89,11 +90,13 @@ public final class AppState {
     }
 
     /// Builds a state that talks to `client` and keeps its files under
-    /// `storageDirectory`, leaving the Keychain alone. Like the other init it
-    /// starts no loops, so a test drives `sync` and `afkTick` itself.
+    /// `storageDirectory`, leaving the Keychain and the app's own defaults
+    /// alone. Like the other init it starts no loops, so a test drives `sync`
+    /// and `afkTick` itself.
     public init(
         client: HarvestClient,
         storageDirectory: URL,
+        defaults: UserDefaults? = nil,
         idleSeconds: @escaping () -> TimeInterval = { 0 },
         sleepWatch: SleepWatch? = nil
     ) {
@@ -102,15 +105,25 @@ public final class AppState {
         self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
         self.injectedClient = client
         self.credentialStore = InMemoryCredentialStore()
+        self.defaults = defaults ?? UserDefaults(suiteName: "HarvestTimerTests.\(UUID().uuidString)")!
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         self.goalsStore = GoalsStore(directory: storageDirectory)
-        afkToleranceMinutes = 10
-        customColors = CustomColors()
+        afkToleranceMinutes = Self.loadAFKTolerance(from: self.defaults)
+        customColors = Self.loadCustomColors(from: self.defaults)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
+    }
+
+    private static func loadAFKTolerance(from defaults: UserDefaults) -> Int {
+        defaults.object(forKey: afkToleranceKey) as? Int ?? 10
+    }
+
+    private static func loadCustomColors(from defaults: UserDefaults) -> CustomColors {
+        defaults.data(forKey: customColorsKey)
+            .flatMap { try? JSONDecoder().decode(CustomColors.self, from: $0) } ?? CustomColors()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
