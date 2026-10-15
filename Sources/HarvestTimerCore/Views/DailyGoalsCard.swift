@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The per-weekday hours goals and break allowances, as a settings card.
 struct DailyGoalsCard: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
 
     /// `goalSettings` is read-only from outside `AppState`, so the switch goes
@@ -17,7 +18,7 @@ struct DailyGoalsCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "target")
-                    .foregroundStyle(Color.harvest)
+                    .foregroundStyle(palette.accent)
                     .frame(width: 24, height: 24)
                 Text("Daily Pace")
                     .font(.headline)

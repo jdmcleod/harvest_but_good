@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EntryList: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     /// The footer's only route to the goal settings, the day tabs no longer
     /// offering one.
@@ -27,7 +28,7 @@ struct EntryList: View {
                         .font(.callout)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.harvestGreen)
+                .tint(palette.start)
                 .controlSize(.small)
                 .pointingCursor()
                 .help(
@@ -87,6 +88,7 @@ struct EntryList: View {
 }
 
 private struct WeekTotalCard: View {
+    @Environment(\.palette) private var palette
     let title: String
     let hours: Double
 
@@ -107,13 +109,14 @@ private struct WeekTotalCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(.quaternary, lineWidth: 1)
+                .strokeBorder(palette.outline, lineWidth: 1)
         )
         .help("\(title) hours logged this week")
     }
 }
 
 private struct EntryCard: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
     @Environment(\.openURL) private var openURL
     let entry: TimeEntry
@@ -143,7 +146,7 @@ private struct EntryCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.forProject(entry.project.id))
+                        .fill(palette.forProject(entry.project.id))
                         .frame(width: 4)
                     VStack(alignment: .leading, spacing: 2) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -187,7 +190,7 @@ private struct EntryCard: View {
                             Text(Hours.formatted(state.liveHours(for: entry)))
                                 .font(.system(.title3, design: .rounded).weight(.semibold))
                                 .monospacedDigit()
-                                .foregroundStyle(entry.isRunning ? Color.harvest : .primary)
+                                .foregroundStyle(entry.isRunning ? palette.accent : .primary)
                                 .onTapGesture { beginHoursEdit() }
                                 .pointingCursor()
                                 .help("Click to edit duration — 90, 1:30, 2.5, or +15 / -15 to adjust")
@@ -235,7 +238,7 @@ private struct EntryCard: View {
             } label: {
                 Image(systemName: entry.isRunning ? "stop.circle.fill" : "play.circle.fill")
                     .font(.system(size: 34))
-                    .foregroundStyle(entry.isRunning ? Color.red : Color.secondary)
+                    .foregroundStyle(entry.isRunning ? palette.danger : palette.idleControl)
             }
             .buttonStyle(.plain)
             .pointingCursor()
@@ -260,7 +263,7 @@ private struct EntryCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(
-                    highlightColor == .clear ? AnyShapeStyle(.quaternary) : AnyShapeStyle(highlightColor),
+                    highlightColor == .clear ? palette.outline : AnyShapeStyle(highlightColor),
                     lineWidth: highlightColor == .clear ? 1 : 2
                 )
         )
@@ -322,8 +325,8 @@ private struct EntryCard: View {
     }
 
     private var highlightColor: Color {
-        if isSelected { return .accentColor }
-        if entry.isRunning { return .harvest }
+        if isSelected { return palette.selection }
+        if entry.isRunning { return palette.accent }
         return .clear
     }
 

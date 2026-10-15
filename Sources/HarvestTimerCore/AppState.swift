@@ -24,8 +24,15 @@ public final class AppState {
     public var syncError: String?
     public var afkPrompt: AFKPrompt?
     public var afkToleranceMinutes: Int {
-        didSet { UserDefaults.standard.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
+        didSet { defaults.set(afkToleranceMinutes, forKey: Self.afkToleranceKey) }
     }
+    public var customColors: CustomColors {
+        didSet {
+            guard let data = try? JSONEncoder().encode(customColors) else { return }
+            defaults.set(data, forKey: Self.customColorsKey)
+        }
+    }
+    public var palette: Palette { customColors.palette }
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -38,9 +45,12 @@ public final class AppState {
     /// can put it in the past instead of waiting for midnight.
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
+    private static let customColorsKey = "customColors"
     private var currentUserId: Int64?
     private var companyBaseUri: String?
     private let weekCalendar = WeekCalendar()
+    private let credentialStore: CredentialStore
+    private let defaults: UserDefaults
     private let eventLog: EventLog
     private let favoritesStore: FavoritesStore
     private let breakTitlesStore: BreakTitlesStore
@@ -65,23 +75,28 @@ public final class AppState {
         self.idleSeconds = idleSeconds
         self.sleepWatch = sleepWatch ?? SleepWatch()
         self.injectedClient = nil
+        self.credentialStore = Keychain.shared
+        self.defaults = .standard
         self.eventLog = EventLog(directory: EventLog.defaultDirectory)
         self.favoritesStore = FavoritesStore(directory: EventLog.defaultDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: EventLog.defaultDirectory)
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
-        afkToleranceMinutes = UserDefaults.standard.object(forKey: Self.afkToleranceKey) as? Int ?? 10
-        credentials = Keychain.shared.load()
+        afkToleranceMinutes = Self.loadAFKTolerance(from: defaults)
+        customColors = Self.loadCustomColors(from: defaults)
+        credentials = credentialStore.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
     }
 
     /// Builds a state that talks to `client` and keeps its files under
-    /// `storageDirectory`, leaving the Keychain alone. Like the other init it
-    /// starts no loops, so a test drives `sync` and `afkTick` itself.
+    /// `storageDirectory`, leaving the Keychain and the app's own defaults
+    /// alone. Like the other init it starts no loops, so a test drives `sync`
+    /// and `afkTick` itself.
     public init(
         client: HarvestClient,
         storageDirectory: URL,
+        defaults: UserDefaults? = nil,
         idleSeconds: @escaping () -> TimeInterval = { 0 },
         sleepWatch: SleepWatch? = nil
     ) {
@@ -89,14 +104,26 @@ public final class AppState {
         // A centre of its own, so no real sleep reaches a test.
         self.sleepWatch = sleepWatch ?? SleepWatch(center: NotificationCenter())
         self.injectedClient = client
+        self.credentialStore = InMemoryCredentialStore()
+        self.defaults = defaults ?? UserDefaults(suiteName: "HarvestTimerTests.\(UUID().uuidString)")!
         self.eventLog = EventLog(directory: storageDirectory)
         self.favoritesStore = FavoritesStore(directory: storageDirectory)
         self.breakTitlesStore = BreakTitlesStore(directory: storageDirectory)
         self.goalsStore = GoalsStore(directory: storageDirectory)
-        afkToleranceMinutes = 10
+        afkToleranceMinutes = Self.loadAFKTolerance(from: self.defaults)
+        customColors = Self.loadCustomColors(from: self.defaults)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
+    }
+
+    private static func loadAFKTolerance(from defaults: UserDefaults) -> Int {
+        defaults.object(forKey: afkToleranceKey) as? Int ?? 10
+    }
+
+    private static func loadCustomColors(from defaults: UserDefaults) -> CustomColors {
+        defaults.data(forKey: customColorsKey)
+            .flatMap { try? JSONDecoder().decode(CustomColors.self, from: $0) } ?? CustomColors()
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -859,7 +886,7 @@ public final class AppState {
 
     func saveCredentials(token: String, accountId: String) throws {
         let credentials = Keychain.Credentials(token: token, accountId: accountId)
-        try Keychain.shared.save(credentials)
+        try credentialStore.save(credentials)
         self.credentials = credentials
         currentUserId = nil
         companyBaseUri = nil
@@ -868,7 +895,7 @@ public final class AppState {
     }
 
     func removeCredentials() {
-        Keychain.shared.clear()
+        credentialStore.clear()
         credentials = nil
         currentUserId = nil
         companyBaseUri = nil

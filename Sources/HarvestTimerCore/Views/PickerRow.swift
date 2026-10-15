@@ -12,15 +12,23 @@ extension View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color(nsColor: .textBackgroundColor))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(.separator)
-            )
+            .overlay(FieldOutline(cornerRadius: 6))
+    }
+}
+
+private struct FieldOutline: View {
+    @Environment(\.palette) private var palette
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .strokeBorder(palette.fieldOutline)
     }
 }
 
 /// The framed, scrolling box every picker list sits in.
 struct PickerListBox<Content: View>: View {
+    @Environment(\.palette) private var palette
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -37,12 +45,13 @@ struct PickerListBox<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(.separator)
+                .strokeBorder(palette.fieldOutline)
         )
     }
 }
 
 struct PickerRow: View {
+    @Environment(\.palette) private var palette
     let title: String
     let subtitle: String?
     /// Trailing text, such as the hours already on an entry.
@@ -78,7 +87,7 @@ struct PickerRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.harvest : .clear)
+                .fill(isSelected ? palette.accent : .clear)
         )
         .foregroundStyle(isSelected ? .white : .primary)
         // A gesture, not a Button: while the search field is being edited AppKit
