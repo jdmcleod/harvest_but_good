@@ -124,6 +124,7 @@ private struct GoalField: View {
 /// the goal above instead of one combined switch — an experiment, not the
 /// finished feature.
 private struct AlmanacPaceSection: View {
+    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
 
     @State private var apiKey = ""
@@ -208,7 +209,7 @@ private struct AlmanacPaceSection: View {
             if state.almanac.isUnavailable {
                 Text("Almanac didn't accept that — check the key and email.")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(palette.danger)
             } else {
                 Text(statusText)
                     .font(.caption)

@@ -15,14 +15,19 @@ final class FakeAlmanac: AlmanacClient, @unchecked Sendable {
     var constraints: [AlmanacConstraint] = []
     var failNextCall: Error?
     /// Every call made, in order, so a test can check what happened and when.
-    private(set) var calls: [String] = []
+    var calls: [String] { lock.withLock { recorded } }
+    private var recorded: [String] = []
+    /// The Almanac switches start a refresh of their own, which can land on
+    /// another thread alongside the one a test forces.
+    private let lock = NSLock()
 
     private func record(_ call: String) throws {
-        calls.append(call)
-        if let failNextCall {
-            self.failNextCall = nil
-            throw failNextCall
+        let failure: Error? = lock.withLock {
+            recorded.append(call)
+            defer { failNextCall = nil }
+            return failNextCall
         }
+        if let failure { throw failure }
     }
 
     func people() async throws -> [AlmanacPerson] {
