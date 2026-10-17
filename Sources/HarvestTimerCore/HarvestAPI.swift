@@ -35,6 +35,8 @@ public struct HarvestAPI: HarvestClient {
     }
 
     static let baseURL = URL(string: "https://api.harvestapp.com/v2")!
+    /// Where someone makes a personal access token for this app.
+    static let developersURL = URL(string: "https://id.getharvest.com/developers")!
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()

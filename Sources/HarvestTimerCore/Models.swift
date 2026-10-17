@@ -157,6 +157,12 @@ public struct HarvestUser: Codable {
     public let firstName: String
     public let lastName: String
 
+    public var fullName: String { "\(firstName) \(lastName)" }
+
+    public var initials: String {
+        [firstName, lastName].compactMap(\.first).map(String.init).joined()
+    }
+
     public init(id: Int64, firstName: String, lastName: String) {
         self.id = id
         self.firstName = firstName

@@ -46,8 +46,10 @@ public final class AppState {
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private static let customColorsKey = "customColors"
-    private var currentUserId: Int64?
-    private var companyBaseUri: String?
+    /// Who the token belongs to and where their account lives, as the first
+    /// sync after connecting learns them. Nil until then.
+    public private(set) var currentUser: HarvestUser?
+    public private(set) var company: HarvestCompany?
     private let weekCalendar = WeekCalendar()
     private let credentialStore: CredentialStore
     private let defaults: UserDefaults
@@ -327,20 +329,20 @@ public final class AppState {
 
         await perform { api in
             let sortedDays = days.sorted()
-            let userId: Int64
-            if let currentUserId {
-                userId = currentUserId
+            let user: HarvestUser
+            if let currentUser {
+                user = currentUser
             } else {
-                userId = try await api.currentUser().id
-                currentUserId = userId
+                user = try await api.currentUser()
+                currentUser = user
             }
-            if companyBaseUri == nil {
-                companyBaseUri = try await api.company().baseUri
+            if company == nil {
+                company = try await api.company()
             }
             let entries = try await api.timeEntries(
                 from: sortedDays.first!,
                 to: sortedDays.last!,
-                userId: userId
+                userId: user.id
             )
             now = .now
             lastSyncAt = now
@@ -793,7 +795,7 @@ public final class AppState {
     /// The project's page on the Harvest site, once a sync has learned where
     /// the account lives.
     public func projectURL(for projectId: Int64) -> URL? {
-        companyBaseUri.flatMap { URL(string: "\($0)/projects/\(projectId)") }
+        company.flatMap { URL(string: "\($0.baseUri)/projects/\(projectId)") }
     }
 
     /// Loads the assignments once, or again when `force` says to: task
@@ -888,8 +890,8 @@ public final class AppState {
         let credentials = Keychain.Credentials(token: token, accountId: accountId)
         try credentialStore.save(credentials)
         self.credentials = credentials
-        currentUserId = nil
-        companyBaseUri = nil
+        currentUser = nil
+        company = nil
         budgets.clear()
         start()
     }
@@ -897,8 +899,8 @@ public final class AppState {
     func removeCredentials() {
         credentialStore.clear()
         credentials = nil
-        currentUserId = nil
-        companyBaseUri = nil
+        currentUser = nil
+        company = nil
         book.removeAll()
         projectAssignments = []
         budgets.clear()

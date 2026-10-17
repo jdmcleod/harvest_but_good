@@ -1112,6 +1112,26 @@ func runAFKLoopTests() async {
         }
     }
 
+    await test("a sync learns who the token belongs to, and forgets on removal") {
+        try await withTemporaryDirectory { directory in
+            let fake = FakeHarvest()
+            let state = AppState(client: fake, storageDirectory: directory)
+            expect(state.currentUser == nil, "nobody is known before a sync")
+
+            await state.sync()
+            expect(state.currentUser?.firstName == "Ada", "got \(String(describing: state.currentUser))")
+            expect(state.company?.name == "Test Co", "got \(String(describing: state.company))")
+
+            await state.sync()
+            let fetches = fake.calls.filter { $0 == "currentUser" }
+            expect(fetches.count == 1, "the user should be asked for once, asked \(fetches.count) times")
+
+            state.removeCredentials()
+            expect(state.currentUser == nil, "the user should go with the token")
+            expect(state.company == nil, "and so should the company")
+        }
+    }
+
     await test("a turn of the AFK loop moves the clock on") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
