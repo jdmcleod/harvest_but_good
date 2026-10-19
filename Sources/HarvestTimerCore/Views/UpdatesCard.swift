@@ -17,46 +17,30 @@ struct UpdatesCard: View {
     @State private var failure: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle")
-                    .foregroundStyle(palette.accent)
-                    .frame(width: 24, height: 24)
-                Text("Updates")
-                    .font(.headline)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(build.summary)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 12) {
-                    Button {
-                        Task { await check() }
-                    } label: {
-                        if checking {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Check for Updates")
-                        }
+        SettingsCard(title: "Updates", systemImage: "arrow.down.circle") {
+            HStack(spacing: 12) {
+                result
+                Button {
+                    Task { await check() }
+                } label: {
+                    if checking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Check")
                     }
-                    .disabled(checking || build.commit == nil)
-
-                    result
                 }
-
-                if case .behind = status {
-                    catchUp
-                }
+                .disabled(checking || build.commit == nil)
+                .help("Check for updates")
             }
-            .padding(.leading, 32)
+        } content: {
+            Text(build.summary)
+                .foregroundStyle(.secondary)
+
+            if case .behind = status {
+                catchUp
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
     }
 
     @ViewBuilder

@@ -2,7 +2,6 @@ import SwiftUI
 
 /// The per-weekday hours goals and break allowances, as a settings card.
 struct DailyGoalsCard: View {
-    @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
 
     /// `goalSettings` is read-only from outside `AppState`, so the switch goes
@@ -15,95 +14,86 @@ struct DailyGoalsCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "target")
-                    .foregroundStyle(palette.accent)
-                    .frame(width: 24, height: 24)
-                Text("Daily Pace")
-                    .font(.headline)
-                Spacer()
-                Toggle("", isOn: isEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
-            if state.goalSettings.isEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("How many hours you're aiming for each day, and the break you usually take. Breaks don't count toward the goal. They just push back when you finish.")
-                        .foregroundStyle(.secondary)
-                    Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-                        GridRow {
-                            Text("")
-                            Text("Goal")
-                            Text("Break")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
+        SettingsCard(title: "Daily Pace", systemImage: "target", isOn: isEnabled) {
+            Text("Hours you aim for each day and the break you usually take. Breaks push back when you finish, not the goal. Leave a day blank if you don't work it.")
+                .foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                    ForEach(Weekday.workdays, id: \.self) { weekday in
+                        Text(weekday.shortName.uppercased())
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .gridColumnAlignment(.center)
+                    }
+                }
+                ForEach(GoalField.Kind.allCases, id: \.self) { kind in
+                    GridRow {
+                        Text(kind.label)
+                            .foregroundStyle(.secondary)
                         ForEach(Weekday.workdays, id: \.self) { weekday in
-                            GoalRow(weekday: weekday)
+                            GoalField(weekday: weekday, kind: kind)
                         }
                     }
-                    Text("Leave a day blank if you don't work it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.leading, 32)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
     }
 }
 
-private struct GoalRow: View {
-    @Environment(AppState.self) private var state
-    let weekday: Weekday
+/// One day's goal or break. Written back on leaving the field rather than on
+/// every keystroke, so a half-typed "8:" never counts as a day with no goal.
+private struct GoalField: View {
+    enum Kind: CaseIterable {
+        case goal, breakAllowance
 
-    @State private var goalText = ""
-    @State private var breakText = ""
-    @FocusState private var focused: Field?
-
-    private enum Field { case goal, breakAllowance }
-
-    var body: some View {
-        GridRow {
-            Text(weekday.shortName)
-                .frame(width: 34, alignment: .leading)
-            field($goalText, placeholder: "8:00", field: .goal)
-            field($breakText, placeholder: "0:30", field: .breakAllowance)
-        }
-        .onAppear(perform: load)
-        // Written back on leaving the field rather than on every keystroke,
-        // so a half-typed "8:" never counts as a day with no goal.
-        .onChange(of: focused) { _, now in
-            if now == nil { commit() }
-        }
+        var label: String { self == .goal ? "Goal" : "Break" }
+        var placeholder: String { self == .goal ? "8:00" : "0:30" }
     }
 
-    private func field(_ text: Binding<String>, placeholder: String, field: Field) -> some View {
-        TextField(placeholder, text: text)
+    @Environment(AppState.self) private var state
+    let weekday: Weekday
+    let kind: Kind
+
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var stored: DayGoal? { state.goalSettings.days[weekday] }
+
+    var body: some View {
+        TextField(kind.placeholder, text: $text)
             .textFieldStyle(.roundedBorder)
             .monospacedDigit()
-            .frame(width: 64)
-            .focused($focused, equals: field)
+            .multilineTextAlignment(.center)
+            .frame(width: 56)
+            .focused($focused)
             .onSubmit(commit)
+            .onAppear(perform: load)
+            .onChange(of: focused) { _, now in
+                if !now { commit() }
+            }
+            // Clearing a day's goal clears its break too, so the field
+            // beside this one follows whatever was stored.
+            .onChange(of: stored) { _, _ in
+                if !focused { load() }
+            }
     }
 
     private func load() {
-        let goal = state.goalSettings.days[weekday]
-        goalText = goal.map { Hours.formatted($0.hours) } ?? ""
-        breakText = (goal?.breakHours ?? 0) > 0 ? Hours.formatted(goal!.breakHours) : ""
+        switch kind {
+        case .goal:
+            text = stored.map { Hours.formatted($0.hours) } ?? ""
+        case .breakAllowance:
+            let breakHours = stored?.breakHours ?? 0
+            text = breakHours > 0 ? Hours.formatted(breakHours) : ""
+        }
     }
 
     private func commit() {
+        let typed = Hours.parse(text) ?? 0
         state.setGoal(
-            hours: Hours.parse(goalText) ?? 0,
-            breakHours: Hours.parse(breakText) ?? 0,
+            hours: kind == .goal ? typed : stored?.hours ?? 0,
+            breakHours: kind == .breakAllowance ? typed : stored?.breakHours ?? 0,
             for: weekday
         )
         // Reads back what was stored, so "7.5" settles as "7:30".

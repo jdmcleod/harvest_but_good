@@ -27,7 +27,7 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $showingSettings) {
-            SetupView(isSheet: true)
+            SettingsView()
         }
         .sheet(item: $state.afkPrompt) { prompt in
             AFKPromptView(prompt: prompt)
