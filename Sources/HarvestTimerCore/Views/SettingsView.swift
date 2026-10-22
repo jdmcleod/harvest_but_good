@@ -35,6 +35,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     AccountCard()
+                    ShortcutCard()
                     IdleDetectionCard()
                     DailyGoalsCard()
                     CustomColorsCard()

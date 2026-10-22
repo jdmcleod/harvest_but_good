@@ -33,6 +33,15 @@ public final class AppState {
         }
     }
     public var palette: Palette { customColors.palette }
+    public var hotKey: HotKey {
+        didSet {
+            if let data = try? JSONEncoder().encode(hotKey) {
+                defaults.set(data, forKey: Self.hotKeyKey)
+            }
+            onHotKeyChange?(hotKey)
+        }
+    }
+    public var onHotKeyChange: ((HotKey) -> Void)?
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -46,6 +55,7 @@ public final class AppState {
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private static let customColorsKey = "customColors"
+    private static let hotKeyKey = "hotKey"
     /// Who the token belongs to and where their account lives, as the first
     /// sync after connecting learns them. Nil until then.
     public private(set) var currentUser: HarvestUser?
@@ -85,6 +95,7 @@ public final class AppState {
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = Self.loadAFKTolerance(from: defaults)
         customColors = Self.loadCustomColors(from: defaults)
+        hotKey = Self.loadHotKey(from: defaults)
         credentials = credentialStore.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
@@ -114,6 +125,7 @@ public final class AppState {
         self.goalsStore = GoalsStore(directory: storageDirectory)
         afkToleranceMinutes = Self.loadAFKTolerance(from: self.defaults)
         customColors = Self.loadCustomColors(from: self.defaults)
+        hotKey = Self.loadHotKey(from: self.defaults)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
@@ -126,6 +138,11 @@ public final class AppState {
     private static func loadCustomColors(from defaults: UserDefaults) -> CustomColors {
         defaults.data(forKey: customColorsKey)
             .flatMap { try? JSONDecoder().decode(CustomColors.self, from: $0) } ?? CustomColors()
+    }
+
+    private static func loadHotKey(from defaults: UserDefaults) -> HotKey {
+        defaults.data(forKey: hotKeyKey)
+            .flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? .standard
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
