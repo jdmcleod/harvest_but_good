@@ -33,6 +33,15 @@ public final class AppState {
         }
     }
     public var palette: Palette { customColors.palette }
+    public var hotKey: HotKey {
+        didSet {
+            if let data = try? JSONEncoder().encode(hotKey) {
+                defaults.set(data, forKey: Self.hotKeyKey)
+            }
+            onHotKeyChange?(hotKey)
+        }
+    }
+    public var onHotKeyChange: ((HotKey) -> Void)?
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -46,6 +55,7 @@ public final class AppState {
     var lastOpenedAt: Date = .now
     private static let afkToleranceKey = "afkToleranceMinutes"
     private static let customColorsKey = "customColors"
+    private static let hotKeyKey = "hotKey"
     /// Who the token belongs to and where their account lives, as the first
     /// sync after connecting learns them. Nil until then.
     public private(set) var currentUser: HarvestUser?
@@ -85,6 +95,7 @@ public final class AppState {
         self.goalsStore = GoalsStore(directory: EventLog.defaultDirectory)
         afkToleranceMinutes = Self.loadAFKTolerance(from: defaults)
         customColors = Self.loadCustomColors(from: defaults)
+        hotKey = Self.loadHotKey(from: defaults)
         credentials = credentialStore.load()
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
@@ -114,6 +125,7 @@ public final class AppState {
         self.goalsStore = GoalsStore(directory: storageDirectory)
         afkToleranceMinutes = Self.loadAFKTolerance(from: self.defaults)
         customColors = Self.loadCustomColors(from: self.defaults)
+        hotKey = Self.loadHotKey(from: self.defaults)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
@@ -126,6 +138,11 @@ public final class AppState {
     private static func loadCustomColors(from defaults: UserDefaults) -> CustomColors {
         defaults.data(forKey: customColorsKey)
             .flatMap { try? JSONDecoder().decode(CustomColors.self, from: $0) } ?? CustomColors()
+    }
+
+    private static func loadHotKey(from defaults: UserDefaults) -> HotKey {
+        defaults.data(forKey: hotKeyKey)
+            .flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? .standard
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -411,6 +428,18 @@ public final class AppState {
     /// The budget to draw on an entry's card.
     public func budgetLine(for entry: TimeEntry) -> BudgetLine? {
         budgets.line(for: entry)
+    }
+
+    public func shortcutKey(for favorite: Favorite) -> String? {
+        FavoriteShortcuts.key(for: favorite, in: favorites)
+    }
+
+    /// False when no favorite answers to the key, so the press can go on to
+    /// whatever else wants it.
+    public func startFavorite(forKey key: String) -> Bool {
+        guard let favorite = FavoriteShortcuts.favorite(forKey: key, in: favorites) else { return false }
+        Task { await startFavorite(favorite) }
+        return true
     }
 
     public func startFavorite(_ favorite: Favorite) async {
@@ -851,6 +880,7 @@ public final class AppState {
         // Matched by id, not by every field: a project renamed in Harvest is
         // still the same favorite.
         guard !favorites.contains(where: { $0.id == favorite.id }) else { return }
+        releaseShortcut(favorite.shortcut)
         favorites.append(favorite)
         favoritesStore.save(favorites)
     }
@@ -882,8 +912,17 @@ public final class AppState {
     public func updateFavorite(_ favorite: Favorite) {
         guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
         guard favorites[index] != favorite else { return }
+        releaseShortcut(favorite.shortcut)
         favorites[index] = favorite
         favoritesStore.save(favorites)
+    }
+
+    /// One key starts one favorite, so whoever held it goes back to its place.
+    private func releaseShortcut(_ key: String?) {
+        guard let key else { return }
+        for index in favorites.indices where favorites[index].shortcut == key {
+            favorites[index].shortcut = nil
+        }
     }
 
     func saveCredentials(token: String, accountId: String) throws {

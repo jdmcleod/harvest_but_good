@@ -191,6 +191,8 @@ public struct Favorite: Codable, Identifiable, Equatable {
     public let taskName: String
     public var nickname: String?
     public var colorIndex: Int?
+    /// A key of its own; nil takes one from its place in the row.
+    public var shortcut: String?
 
     public var id: String { "\(projectId)-\(taskId)" }
 
@@ -217,7 +219,8 @@ public struct Favorite: Codable, Identifiable, Equatable {
         projectName: String,
         taskName: String,
         nickname: String? = nil,
-        colorIndex: Int? = nil
+        colorIndex: Int? = nil,
+        shortcut: String? = nil
     ) {
         self.projectId = projectId
         self.taskId = taskId
@@ -226,6 +229,7 @@ public struct Favorite: Codable, Identifiable, Equatable {
         self.taskName = taskName
         self.nickname = nickname
         self.colorIndex = colorIndex
+        self.shortcut = shortcut
     }
 }
 

@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private var window: NSWindow!
     private var hasRestoredFrame = false
+    /// The app that was in front when the window opened, so hiding it with
+    /// the shortcut hands focus back there.
+    private var previousApp: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -54,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.setFrameAutosaveName("HarvestTimerMain")
 
         state.onAFKDetected = { [weak self] in self?.showWindow() }
+
+        HotKeyCenter.shared.onPress = { [weak self] in self?.toggleFromShortcut() }
+        HotKeyCenter.shared.register(state.hotKey)
+        state.onHotKeyChange = { HotKeyCenter.shared.register($0) }
+        watchFavoriteKeys()
         showWindow()
     }
 
@@ -100,6 +108,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showWindow()
     }
 
+    /// Hides only when the window is what you're looking at. Visible behind
+    /// another app counts as hidden, so the press brings it forward instead.
+    /// The app being active, not the window being key, since a sheet such as
+    /// Settings takes key for itself.
+    private func toggleFromShortcut() {
+        guard window.isVisible, NSApp.isActive else {
+            Task { await state.sync() }
+            showWindow()
+            return
+        }
+        window.orderOut(nil)
+        if let previousApp, !previousApp.isTerminated {
+            previousApp.activate()
+        } else {
+            NSApp.hide(nil)
+        }
+        previousApp = nil
+    }
+
+    /// A local monitor rather than SwiftUI's onKeyPress, which only hears
+    /// keys while a view holds focus. Sheets are windows of their own, so
+    /// typing in one never reaches here, and a field in the main window keeps
+    /// its digits.
+    private func watchFavoriteKeys() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control])
+            guard modifiers.isEmpty, !event.isARepeat,
+                  let key = event.charactersIgnoringModifiers, key.count == 1 else { return event }
+            let isMain = event.window.map(ObjectIdentifier.init)
+            let handled = MainActor.assumeIsolated {
+                guard let self, isMain == ObjectIdentifier(self.window),
+                      !(self.window.firstResponder is NSText) else { return false }
+                return self.state.startFavorite(forKey: key)
+            }
+            return handled ? nil : event
+        }
+    }
+
     /// The status item's window lives on whichever display's menu bar took
     /// the click, so its screen is the one the user is looking at.
     private var isOnClickedScreen: Bool {
@@ -108,6 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func showWindow() {
+        let front = NSWorkspace.shared.frontmostApplication
+        if front != .current { previousApp = front }
         state.windowDidOpen()
         if !hasRestoredFrame {
             positionUnderStatusItem()

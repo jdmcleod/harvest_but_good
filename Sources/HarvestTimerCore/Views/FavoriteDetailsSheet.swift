@@ -9,6 +9,7 @@ struct FavoriteDetailsSheet: View {
 
     @State private var nickname = ""
     @State private var colorIndex: Int?
+    @State private var shortcut: String?
     @FocusState private var nicknameFocused: Bool
 
     private var derivedLabel: String {
@@ -21,6 +22,7 @@ struct FavoriteDetailsSheet: View {
         var preview = favorite
         preview.nickname = nickname.isEmpty ? nil : nickname
         preview.colorIndex = colorIndex
+        preview.shortcut = shortcut
         return preview
     }
 
@@ -41,6 +43,7 @@ struct FavoriteDetailsSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     nicknameField
                     colorField
+                    shortcutField
                 }
                 Spacer()
                 previewChip
@@ -59,6 +62,7 @@ struct FavoriteDetailsSheet: View {
         .onAppear {
             nickname = favorite.nickname ?? ""
             colorIndex = favorite.colorIndex
+            shortcut = favorite.shortcut
             nicknameFocused = true
         }
     }
@@ -95,6 +99,45 @@ struct FavoriteDetailsSheet: View {
                 }
             }
             Text("The first swatch is the project’s own colour.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var others: [Favorite] {
+        state.favorites.filter { $0.id != favorite.id }
+    }
+
+    /// The key this favorite's place in the row gives it, unless another
+    /// favorite was given that key outright.
+    private var placeKey: String? {
+        let index = state.favorites.firstIndex { $0.id == favorite.id } ?? state.favorites.count
+        guard let key = FavoriteShortcuts.placeKey(at: index),
+              !others.contains(where: { $0.shortcut == key }) else { return nil }
+        return key
+    }
+
+    private func holder(of key: String) -> Favorite? {
+        FavoriteShortcuts.favorite(forKey: key, in: others)
+    }
+
+    private var shortcutField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Shortcut")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("Shortcut", selection: $shortcut) {
+                Text(placeKey.map { "By position (\($0))" } ?? "By position (none)")
+                    .tag(String?.none)
+                Divider()
+                ForEach(FavoriteShortcuts.choices, id: \.self) { key in
+                    Text(holder(of: key).map { "\(key)  (now \($0.chipLabel))" } ?? key)
+                        .tag(Optional(key))
+                }
+            }
+            .labelsHidden()
+            .frame(width: 160)
+            Text("Press it with the window in front to start this timer.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
