@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         HotKeyCenter.shared.onPress = { [weak self] in self?.toggleFromShortcut() }
         HotKeyCenter.shared.register(state.hotKey)
         state.onHotKeyChange = { HotKeyCenter.shared.register($0) }
+        watchFavoriteKeys()
         showWindow()
     }
 
@@ -124,6 +125,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApp.hide(nil)
         }
         previousApp = nil
+    }
+
+    /// A local monitor rather than SwiftUI's onKeyPress, which only hears
+    /// keys while a view holds focus. Sheets are windows of their own, so
+    /// typing in one never reaches here, and a field in the main window keeps
+    /// its digits.
+    private func watchFavoriteKeys() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control])
+            guard modifiers.isEmpty, !event.isARepeat,
+                  let key = event.charactersIgnoringModifiers, key.count == 1 else { return event }
+            let isMain = event.window.map(ObjectIdentifier.init)
+            let handled = MainActor.assumeIsolated {
+                guard let self, isMain == ObjectIdentifier(self.window),
+                      !(self.window.firstResponder is NSText) else { return false }
+                return self.state.startFavorite(forKey: key)
+            }
+            return handled ? nil : event
+        }
     }
 
     /// The status item's window lives on whichever display's menu bar took

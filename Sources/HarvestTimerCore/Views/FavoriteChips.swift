@@ -129,6 +129,12 @@ private struct FavoriteChip: View {
         return running.project.id == favorite.projectId && running.task.id == favorite.taskId
     }
 
+    private var tooltip: String {
+        let name = "\(favorite.projectName) · \(favorite.taskName)"
+        guard let key = state.shortcutKey(for: favorite) else { return name }
+        return "\(name)  (\(key))"
+    }
+
     var body: some View {
         Button {
             guard !moved else { return }
@@ -155,7 +161,7 @@ private struct FavoriteChip: View {
         )
         .overlay(alignment: .bottom) {
             if hovering, !tooltipsSuppressed {
-                Text("\(favorite.projectName) · \(favorite.taskName)")
+                Text(tooltip)
                     .font(.caption)
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .padding(.horizontal, 8)

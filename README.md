@@ -27,7 +27,7 @@ So here's the app Harvest should have shipped.
 
 - **Menu bar first.** No Dock icon, no window clutter. Today's total hours sit right next to a tidy timer icon.
 - **A shortcut from anywhere.** Press ⌃⌥H to bring the window up over whatever you're in, and again to hide it and land back in that app. Change it under **Settings → Keyboard Shortcut**.
-- **Favorites at one click.** No dropdown safari.
+- **Favorites at one click, or one key.** No dropdown safari. With the window in front, 1–9 and 0 start your first ten favorites; give any favorite its own key under **Edit Favorite → Shortcut**.
 - **Search that finds things.** Type across project, client, and task names at once — `Billy Dev` turns up the Billy Graham project, and picking it lands you straight on the Development task.
 - **An actual day timeline.** A 7 AM–7 PM view with color-coded blocks for every start→stop interval, because "3.2 hours" tells you nothing about where your morning went. Harvest's own API doesn't expose these timestamps — this app logs them itself, locally.
 - **Move time where it belongs.** Logged an hour against the wrong task? Right-click the entry, pick **Move Time**, and send some or all of it elsewhere. The day's other entries come first in the list, so the usual fix is two clicks; the whole project list is underneath for everything else. Moved time merges into a matching entry instead of piling up duplicates, and a running timer keeps running — on the destination if the move empties the entry it came from.

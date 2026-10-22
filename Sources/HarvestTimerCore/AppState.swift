@@ -430,6 +430,18 @@ public final class AppState {
         budgets.line(for: entry)
     }
 
+    public func shortcutKey(for favorite: Favorite) -> String? {
+        FavoriteShortcuts.key(for: favorite, in: favorites)
+    }
+
+    /// False when no favorite answers to the key, so the press can go on to
+    /// whatever else wants it.
+    public func startFavorite(forKey key: String) -> Bool {
+        guard let favorite = FavoriteShortcuts.favorite(forKey: key, in: favorites) else { return false }
+        Task { await startFavorite(favorite) }
+        return true
+    }
+
     public func startFavorite(_ favorite: Favorite) async {
         await addEntry(projectId: favorite.projectId, taskId: favorite.taskId)
     }
@@ -868,6 +880,7 @@ public final class AppState {
         // Matched by id, not by every field: a project renamed in Harvest is
         // still the same favorite.
         guard !favorites.contains(where: { $0.id == favorite.id }) else { return }
+        releaseShortcut(favorite.shortcut)
         favorites.append(favorite)
         favoritesStore.save(favorites)
     }
@@ -899,8 +912,17 @@ public final class AppState {
     public func updateFavorite(_ favorite: Favorite) {
         guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
         guard favorites[index] != favorite else { return }
+        releaseShortcut(favorite.shortcut)
         favorites[index] = favorite
         favoritesStore.save(favorites)
+    }
+
+    /// One key starts one favorite, so whoever held it goes back to its place.
+    private func releaseShortcut(_ key: String?) {
+        guard let key else { return }
+        for index in favorites.indices where favorites[index].shortcut == key {
+            favorites[index].shortcut = nil
+        }
     }
 
     func saveCredentials(token: String, accountId: String) throws {
