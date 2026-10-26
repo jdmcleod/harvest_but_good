@@ -89,6 +89,11 @@ struct ReleaseUpdatesCard: View {
         defer { busy = false }
         do {
             try await installer.install(release)
+            // A window with a sheet open refuses to quit, and this card sits
+            // in the Settings sheet. The swap waits on the app quitting.
+            for window in NSApp.windows {
+                if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            }
             NSApp.terminate(nil)
         } catch {
             failure = error.localizedDescription
