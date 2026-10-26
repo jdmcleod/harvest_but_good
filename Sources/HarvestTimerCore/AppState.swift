@@ -97,6 +97,9 @@ public final class AppState {
         customColors = Self.loadCustomColors(from: defaults)
         hotKey = Self.loadHotKey(from: defaults)
         credentials = credentialStore.load()
+        if let credentials, BuildInfo.current.version != nil {
+            credentialStore.adoptForRelease(credentials, defaults: defaults)
+        }
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
