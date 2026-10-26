@@ -66,8 +66,8 @@ public struct Release: Equatable, Sendable {
 /// for a build from a checkout, or the latest release for a release build.
 ///
 /// Reads only. A checkout build gets a sentence and a command to run, since
-/// its Keychain access is pinned to its own certificate and a release signed
-/// with RoleModel's would not pass. `ReleaseInstaller` does the installing.
+/// its Keychain access is pinned to its own certificate and a release would
+/// not pass. `ReleaseInstaller` does the installing.
 public struct UpdateChecker {
     public static let defaultRepository = "jdmcleod/harvest_but_good"
     public static let defaultBranch = "main"

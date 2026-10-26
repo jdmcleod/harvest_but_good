@@ -74,13 +74,13 @@ Both values go straight into the macOS Keychain. Revoke the token from that same
 
 ## Staying up to date
 
-**Installed from a release?** Open the gear, then **Updates → Check**. If a newer release is out, **Install and Restart** downloads it, checks it's signed by RoleModel, swaps it in and reopens the app. To install a release in the first place, or to move over from a build of your own:
+**Installed from a release?** Open the gear, then **Updates → Check**. If a newer release is out, **Install and Restart** downloads it, swaps it in and reopens the app. To install a release in the first place, or to move over from a build of your own:
 
 ```sh
 curl -fsSL https://github.com/jdmcleod/harvest_but_good/releases/latest/download/install.sh | sh
 ```
 
-Releases are signed with RoleModel's Developer ID, so the Keychain stops asking after updates. The first launch after switching from a build of your own asks once, because your saved token trusts the certificate you built with. Click **Always Allow**. Releases are Apple silicon only and not notarized yet. That's fine for the script and the in-app updater, which never mark the download as quarantined. A zip opened by hand from a browser will be blocked by Gatekeeper, though.
+The first launch after switching from a build of your own asks for Keychain access once. Click **Always Allow**. Releases are Apple silicon only.
 
 **Built it yourself?** The build stamps the commit it came from, and **Check** asks GitHub what has landed on `main` since. It downloads nothing:
 
@@ -100,7 +100,7 @@ Push a tag from `main`:
 git tag v0.3.0 && git push origin v0.3.0
 ```
 
-`.github/workflows/release.yml` runs the tests, signs the build with the Developer ID kept in the `DEVELOPER_ID_P12` and `DEVELOPER_ID_P12_PASSWORD` secrets, and publishes `HarvestButGood.zip`, `install.sh` and `SHA256SUMS`. The certificate expires on November 25, 2027.
+`.github/workflows/release.yml` runs the tests, builds the app and publishes it as a GitHub release.
 
 ## The fine print
 

@@ -56,8 +56,7 @@ over `Date` or bare strings for anything a day is booked against. **`EntryBook`*
 entries filed by day and how a lookup or update lands.
 
 Releases: a `v*` tag runs `.github/workflows/release.yml`, which builds with
-`VERSION` and `BUILD_ONLY` set and signs with RoleModel's Developer ID. A bundle
-with `ReleaseVersion` in its plist updates from GitHub releases
+`VERSION` and `BUILD_ONLY` set. A bundle with `ReleaseVersion` in its plist updates from GitHub releases
 (`ReleaseUpdatesCard`, `ReleaseInstaller`); one without updates by git
 (`UpdatesCard`).
 

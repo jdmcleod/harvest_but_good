@@ -12,7 +12,7 @@ enum ReleaseInstallError: LocalizedError {
         case .tool(let name, let output):
             return "\(name) failed: \(output)"
         case .unsigned(let output):
-            return "The download isn't signed by RoleModel, so it was not installed. \(output)"
+            return "The download isn't a signed release, so it was not installed. \(output)"
         }
     }
 }
@@ -24,12 +24,12 @@ enum ReleaseInstallError: LocalizedError {
 /// back. Only the swap itself happens after quitting, in a script that
 /// outlives the app.
 public struct ReleaseInstaller {
-    /// RoleModel's Apple team. The Keychain trusts builds signed by this team,
+    /// The Apple team releases are signed by. The Keychain trusts builds from it,
     /// which is what lets a release update without asking for a password.
     static let teamID = "4UDYMLGB25"
 
     /// What a download must satisfy before it replaces anything: Apple-issued,
-    /// this app, and RoleModel's team. A tampered or foreign zip fails here.
+    /// this app, and the release team. A tampered or foreign zip fails here.
     static let requirement = """
         anchor apple generic and identifier "com.rolemodel.HarvestTimer" \
         and certificate leaf[subject.OU] = "\(teamID)"
