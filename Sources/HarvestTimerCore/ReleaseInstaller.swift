@@ -58,7 +58,9 @@ public struct ReleaseInstaller {
                 throw ReleaseInstallError.tool("Download", "GitHub returned \(code)")
             }
             try run("/usr/bin/ditto", ["-x", "-k", zip.path, stage.path])
-            let fresh = stage.appendingPathComponent(app.lastPathComponent)
+            // The zip's name, not the running bundle's, which Finder lets
+            // anyone rename.
+            let fresh = stage.appendingPathComponent("HarvestButGood.app")
             do {
                 try run("/usr/bin/codesign", ["--verify", "--strict", "-R=\(Self.requirement)", fresh.path])
             } catch ReleaseInstallError.tool(_, let output) {
@@ -71,12 +73,20 @@ public struct ReleaseInstaller {
         }
     }
 
-    /// Copies beside the old bundle before removing it, so a copy that fails
-    /// leaves the old app in place, and reopens whichever app is there.
+    /// Copies beside the old bundle and swaps by renaming, keeping the old one
+    /// until the new one is in place, then reopens whichever app is there.
+    /// Leftovers from an interrupted run go first: ditto merges into an
+    /// existing folder, and stale files would break the new signature.
+    /// Same steps as Scripts/install-release.sh.
     private static let swapScript = """
         while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
-        if ditto "$NEW" "$APP.updating"; then
-            rm -rf "$APP" && mv "$APP.updating" "$APP"
+        rm -rf "$APP.updating" "$APP.old"
+        if ditto "$NEW" "$APP.updating" && mv "$APP" "$APP.old"; then
+            if mv "$APP.updating" "$APP"; then
+                rm -rf "$APP.old"
+            else
+                mv "$APP.old" "$APP"
+            fi
         fi
         rm -rf "$STAGE" "$APP.updating"
         open "$APP"
@@ -104,9 +114,12 @@ public struct ReleaseInstaller {
         process.standardOutput = output
         process.standardError = output
         try process.run()
+        // Read before waiting: a tool that fills the pipe blocks until
+        // someone reads it, and would never exit.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let text = String(data: data, encoding: .utf8) ?? ""
             throw ReleaseInstallError.tool(
                 URL(fileURLWithPath: tool).lastPathComponent,
                 text.trimmingCharacters(in: .whitespacesAndNewlines)

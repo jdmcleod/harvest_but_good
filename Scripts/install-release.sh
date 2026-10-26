@@ -37,7 +37,20 @@ if pgrep -xq HarvestButGood; then
     while pgrep -xq HarvestButGood; do sleep 0.2; done
 fi
 
-rm -rf "$APP"
-ditto "$TMP/HarvestButGood.app" "$APP"
+# Copy beside the old app and swap by renaming, so a failed copy leaves the
+# old one in place. Same steps as the swap in ReleaseInstaller.swift.
+rm -rf "$APP.updating" "$APP.old"
+ditto "$TMP/HarvestButGood.app" "$APP.updating"
+if [ -e "$APP" ]; then
+    mv "$APP" "$APP.old"
+fi
+if ! mv "$APP.updating" "$APP"; then
+    if [ -e "$APP.old" ]; then
+        mv "$APP.old" "$APP"
+    fi
+    echo "Couldn't move the new app into place; the old one is back." >&2
+    exit 1
+fi
+rm -rf "$APP.old"
 echo "Installed $APP"
 open "$APP"
