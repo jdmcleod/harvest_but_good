@@ -10,13 +10,13 @@
 swift build                                      # debug build
 DEVELOPER_DIR=… swift test                       # whole suite (see above)
 DEVELOPER_DIR=… swift test --filter AppState     # one suite, by its @Test name
-Scripts/build-app.sh                             # release build + signed .app in dist/
+Scripts/build-app.sh                             # release build, signed, installed to /Applications
 Scripts/create-signing-cert.sh                   # once per machine; see README
 ```
 
 There is no linter. The app is a menu bar agent (`LSUIElement`), so running it means
-building the bundle and `open dist/HarvestButGood.app` — `swift run` gives you no UI worth
-looking at.
+`Scripts/build-app.sh`, which installs and opens it — `swift run` gives you no UI
+worth looking at.
 
 ## Layout
 
@@ -54,6 +54,11 @@ made off-app.
 **`Day`** wraps Harvest's `yyyy-MM-dd` with a fixed POSIX/Gregorian formatter. Prefer it
 over `Date` or bare strings for anything a day is booked against. **`EntryBook`** owns
 entries filed by day and how a lookup or update lands.
+
+Releases: a `v*` tag runs `.github/workflows/release.yml`, which builds with
+`VERSION` and `BUILD_ONLY` set. A bundle with `ReleaseVersion` in its plist updates from GitHub releases
+(`ReleaseUpdatesCard`, `ReleaseInstaller`); one without updates by git
+(`UpdatesCard`).
 
 Credentials (token + numeric account id) live in the macOS Keychain via `Keychain.shared`.
 

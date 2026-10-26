@@ -10,13 +10,17 @@ public struct BuildInfo: Equatable, Sendable {
     /// build is not the commit it names, so comparing against the commit tells
     /// you about the commit and not about what you are running.
     public let isDirty: Bool
+    /// The release this bundle is, or nil for one built from a checkout. A
+    /// release updates itself from GitHub releases; a checkout updates by git.
+    public let version: String?
 
-    public init(commit: String?, isDirty: Bool) {
+    public init(commit: String?, isDirty: Bool, version: String? = nil) {
         // An absent key and an empty one mean the same thing to everyone
         // reading this, so they are flattened here rather than at each use.
         let trimmed = commit?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.commit = (trimmed?.isEmpty ?? true) ? nil : trimmed
         self.isDirty = isDirty
+        self.version = version
     }
 
     /// What this copy of the app was built from.
@@ -29,7 +33,8 @@ public struct BuildInfo: Equatable, Sendable {
             commit: infoDictionary["GitCommit"] as? String,
             // Written as a string because the build script assembles the plist
             // by hand, where "true" is easier to get right than <true/>.
-            isDirty: (infoDictionary["GitDirty"] as? String) == "true"
+            isDirty: (infoDictionary["GitDirty"] as? String) == "true",
+            version: infoDictionary["ReleaseVersion"] as? String
         )
     }
 

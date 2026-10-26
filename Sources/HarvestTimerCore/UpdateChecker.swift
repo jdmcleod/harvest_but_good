@@ -16,6 +16,7 @@ public enum UpdateStatus: Equatable, Sendable {
 enum UpdateCheckError: LocalizedError {
     case notStamped
     case unknownCommit
+    case noRelease
     case rateLimited
     case http(Int, String)
     case network(Error)
@@ -29,6 +30,8 @@ enum UpdateCheckError: LocalizedError {
             // Also what a commit pushed seconds ago looks like: the API trails
             // the push by a moment, so this is worth retrying before believing.
             return "GitHub doesn't know the commit this was built from yet. If it was just pushed, try again in a moment."
+        case .noRelease:
+            return "No release has been published yet."
         case .rateLimited:
             return "GitHub is rate limiting this address. Try again in an hour."
         case .http(let code, let body):
@@ -41,11 +44,30 @@ enum UpdateCheckError: LocalizedError {
     }
 }
 
-/// Asks GitHub what has landed on the tracked branch since a build was made.
+/// A published release, as much of it as updating needs.
+public struct Release: Equatable, Sendable {
+    public let version: String
+    /// The zipped app attached to the release.
+    public let download: URL
+    /// The release page, for reading the notes.
+    public let page: URL
+
+    /// The asset the release workflow attaches. Named without the version so
+    /// releases/latest/download/ always finds it.
+    static let assetName = "HarvestButGood.zip"
+
+    /// Compares numerically, so 0.10.0 is newer than 0.9.0.
+    public func isNewer(than version: String) -> Bool {
+        self.version.compare(version, options: .numeric) == .orderedDescending
+    }
+}
+
+/// Asks GitHub what has landed since a build was made: commits on the branch
+/// for a build from a checkout, or the latest release for a release build.
 ///
-/// Reads rather than writes, and never downloads anything: the app cannot
-/// replace itself safely while its Keychain access is pinned to one build's
-/// hash, so the answer here is a sentence and a command to run, not an install.
+/// Reads only. A checkout build gets a sentence and a command to run, since
+/// its Keychain access is pinned to its own certificate and a release would
+/// not pass. `ReleaseInstaller` does the installing.
 public struct UpdateChecker {
     public static let defaultRepository = "jdmcleod/harvest_but_good"
     public static let defaultBranch = "main"
@@ -82,7 +104,9 @@ public struct UpdateChecker {
 
     public func status(of build: BuildInfo) async throws -> UpdateStatus {
         guard let commit = build.commit else { throw UpdateCheckError.notStamped }
-        let comparison = try await compare(base: commit, head: branch)
+        let comparison = try await get(
+            "compare/\(commit)...\(branch)", as: Comparison.self, notFound: .unknownCommit
+        )
         switch comparison.status {
         case "identical":
             return .upToDate
@@ -106,10 +130,35 @@ public struct UpdateChecker {
     /// so this is the whole of it.
     public static let updateCommand = "git pull && Scripts/build-app.sh"
 
-    private func compare(base: String, head: String) async throws -> Comparison {
-        guard let url = URL(
-            string: "https://api.github.com/repos/\(repository)/compare/\(base)...\(head)"
-        ) else {
+    private struct LatestRelease: Decodable {
+        struct Asset: Decodable {
+            let name: String
+            let browserDownloadUrl: URL
+        }
+        let tagName: String
+        let htmlUrl: URL
+        let assets: [Asset]
+    }
+
+    /// The newest published release. Drafts and pre-releases never show here,
+    /// which is GitHub's rule for releases/latest.
+    public func latestRelease() async throws -> Release {
+        let latest = try await get("releases/latest", as: LatestRelease.self, notFound: .noRelease)
+        guard let asset = latest.assets.first(where: { $0.name == Release.assetName }) else {
+            throw UpdateCheckError.malformed("\(latest.tagName) has no \(Release.assetName)")
+        }
+        return Release(
+            version: latest.tagName.hasPrefix("v") ? String(latest.tagName.dropFirst()) : latest.tagName,
+            download: asset.browserDownloadUrl,
+            page: latest.htmlUrl
+        )
+    }
+
+    /// The two calls mean different things by a 404, so each names its own.
+    private func get<T: Decodable>(
+        _ path: String, as type: T.Type, notFound: UpdateCheckError
+    ) async throws -> T {
+        guard let url = URL(string: "https://api.github.com/repos/\(repository)/\(path)") else {
             throw UpdateCheckError.malformed("could not build a URL for \(repository)")
         }
 
@@ -131,14 +180,14 @@ public struct UpdateChecker {
         guard code == 200 else {
             // A public repo needs no token, so the interesting failures are a
             // commit GitHub has never seen and the anonymous rate limit.
-            if code == 404 { throw UpdateCheckError.unknownCommit }
+            if code == 404 { throw notFound }
             if code == 403 || code == 429 { throw UpdateCheckError.rateLimited }
             let body = String(data: data, encoding: .utf8) ?? ""
             throw UpdateCheckError.http(code, String(body.prefix(200)))
         }
 
         do {
-            return try Self.decoder.decode(Comparison.self, from: data)
+            return try Self.decoder.decode(T.self, from: data)
         } catch {
             throw UpdateCheckError.malformed(error.localizedDescription)
         }

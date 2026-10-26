@@ -1,0 +1,74 @@
+name: Release
+
+# Push a tag to cut a release:
+#   git tag v0.3.0 && git push origin v0.3.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      IDENTITY: ${{ vars.CODESIGN_IDENTITY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: swift test
+
+      # A throwaway keychain holding only the signing identity, gone with the
+      # runner. The intermediate goes in too: the .p12 carries the leaf alone,
+      # and codesign needs the chain to sign.
+      - name: Import the signing identity
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN"
+          security import "$RUNNER_TEMP/identity.p12" -k "$KEYCHAIN" \
+            -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/identity.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN" | grep -F "$IDENTITY"
+
+      - name: Build
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" BUILD_ONLY=1 CODESIGN_IDENTITY="$IDENTITY" \
+            Scripts/build-app.sh
+
+      - name: Package
+        run: |
+          mkdir -p dist/release
+          ditto -c -k --keepParent dist/HarvestButGood.app dist/release/HarvestButGood.zip
+          cp Scripts/install-release.sh dist/release/install.sh
+          (cd dist/release && shasum -a 256 HarvestButGood.zip > SHA256SUMS)
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/release/* \
+            --title "Harvest But Good ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --notes "Install or update (Apple silicon):
+
+          \`\`\`sh
+          curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/install.sh | sh
+          \`\`\`
+
+          Already on a release? Settings → Updates → Check."

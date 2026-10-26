@@ -39,7 +39,11 @@ struct SettingsView: View {
                     IdleDetectionCard()
                     DailyGoalsCard()
                     CustomColorsCard()
-                    UpdatesCard()
+                    if let version = BuildInfo.current.version {
+                        ReleaseUpdatesCard(version: version)
+                    } else {
+                        UpdatesCard()
+                    }
                 }
                 .padding(.horizontal, 20)
                 // Room for the fade, so nothing sits in it until scrolled.
