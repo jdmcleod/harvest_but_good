@@ -343,6 +343,13 @@ public final class AppState {
     public func sync() async {
         var days = Set(weekDays.map(Day.init))
         days.formUnion(weekCalendar.week(containing: .now).map(Day.init))
+        // A running timer is booked on the day it started, which on a Monday
+        // is outside the week. Missing it means no away prompt and no handover
+        // into today for a timer left on over the weekend.
+        // ponytail: misses a timer left on for over a week; fetch with
+        // is_running=true if that ever happens.
+        let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now)!
+        days.formUnion(weekCalendar.days(from: Day(weekAgo), to: Day(.now)))
 
         await perform { api in
             let sortedDays = days.sorted()
