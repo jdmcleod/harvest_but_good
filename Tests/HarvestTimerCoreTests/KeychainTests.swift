@@ -144,3 +144,42 @@ func runKeychainTests() {
         expect(keychain.load()?.token == token, "the token is stored as bytes, not as a name")
     }
 }
+
+/// Counts saves, and can refuse them the way a Keychain can.
+private final class CountingStore: CredentialStore {
+    var saves = 0
+    var refuses = false
+
+    func load() -> Keychain.Credentials? { nil }
+    func save(_ credentials: Keychain.Credentials) throws {
+        if refuses { throw CocoaError(.featureUnsupported) }
+        saves += 1
+    }
+    func clear() {}
+}
+
+@Test("Adopting credentials for a release")
+func runCredentialAdoptionTests() {
+    let credentials = Keychain.Credentials(token: "a-token", accountId: "12345")
+    func scratchDefaults() -> UserDefaults {
+        UserDefaults(suiteName: "HarvestTimerTests.\(UUID().uuidString)")!
+    }
+
+    test("the first release launch saves the credentials again, and only that one") {
+        let store = CountingStore()
+        let defaults = scratchDefaults()
+        store.adoptForRelease(credentials, defaults: defaults)
+        store.adoptForRelease(credentials, defaults: defaults)
+        expect(store.saves == 1, "expected one save, got \(store.saves)")
+    }
+
+    test("a save the Keychain refuses is tried again next launch") {
+        let store = CountingStore()
+        let defaults = scratchDefaults()
+        store.refuses = true
+        store.adoptForRelease(credentials, defaults: defaults)
+        store.refuses = false
+        store.adoptForRelease(credentials, defaults: defaults)
+        expect(store.saves == 1, "expected the retry to save, got \(store.saves)")
+    }
+}
