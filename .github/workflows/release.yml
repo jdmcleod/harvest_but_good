@@ -27,7 +27,15 @@ jobs:
         env:
           P12: ${{ secrets.DEVELOPER_ID_P12 }}
           P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        # security import reports a missing password as "parameters not
+        # valid", so name what is missing first.
         run: |
+          for name in IDENTITY P12 P12_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is empty. Set CODESIGN_IDENTITY, DEVELOPER_ID_P12 and DEVELOPER_ID_P12_PASSWORD."
+              exit 1
+            fi
+          done
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
           echo "$P12" | base64 --decode > "$RUNNER_TEMP/identity.p12"
