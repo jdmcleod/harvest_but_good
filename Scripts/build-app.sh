@@ -13,6 +13,11 @@ BUILD_DIR=".build/release"
 STAGED_APP="dist/${APP_NAME}.app"
 INSTALL_DIR="${INSTALL_DIR:-/Applications}"
 INSTALLED_APP="${INSTALL_DIR}/${APP_NAME}.app"
+# CI sets these for a release: VERSION marks the bundle as one, which is what
+# tells the app to update from GitHub releases rather than from git, and
+# BUILD_ONLY stops after signing and leaves the bundle in dist/ to be zipped.
+VERSION="${VERSION:-}"
+BUILD_ONLY="${BUILD_ONLY:-}"
 
 # Stamped into the bundle so the app can ask GitHub what has landed since it
 # was built. Tracked files only: an untracked scratch file changes nothing that
@@ -22,6 +27,12 @@ if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     GIT_DIRTY="true"
 else
     GIT_DIRTY="false"
+fi
+
+RELEASE_KEYS=""
+if [ -n "$VERSION" ]; then
+    RELEASE_KEYS="<key>ReleaseVersion</key>
+    <string>${VERSION}</string>"
 fi
 
 swift build -c release --product "$PRODUCT_NAME"
@@ -50,7 +61,7 @@ cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${VERSION:-1.0.0}</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>GitCommit</key>
@@ -63,6 +74,7 @@ cat > "$STAGED_APP/Contents/Info.plist" <<PLIST
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>RoleModel Software</string>
+    ${RELEASE_KEYS}
 </dict>
 </plist>
 PLIST
@@ -95,7 +107,19 @@ if [ -z "$SIGN_IDENTITY" ]; then
     echo "         Run Scripts/create-signing-cert.sh once to stop that."
 fi
 
-codesign --force --sign "$SIGN_IDENTITY" "$STAGED_APP"
+SIGN_FLAGS=()
+case "$SIGN_IDENTITY" in
+    # What notarizing will demand, turned on now so the first notarized release
+    # isn't also the first build to run under the hardened runtime.
+    "Developer ID"*) SIGN_FLAGS=(--options runtime --timestamp) ;;
+esac
+codesign --force "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" --sign "$SIGN_IDENTITY" "$STAGED_APP"
+
+if [ -n "$BUILD_ONLY" ]; then
+    codesign --verify --strict "$STAGED_APP"
+    echo "Built $STAGED_APP"
+    exit 0
+fi
 
 # Quit only once the build has succeeded and been signed, so a broken build
 # leaves the working app running. The install below replaces the bundle a

@@ -74,17 +74,33 @@ Both values go straight into the macOS Keychain. Revoke the token from that same
 
 ## Staying up to date
 
-The build stamps the commit it came from into the app bundle. Open the gear, and **Check for Updates** asks GitHub what has landed on `main` since then. It tells you and stops there — it downloads nothing and replaces nothing:
+**Installed from a release?** Open the gear, then **Updates → Check**. If a newer release is out, **Install and Restart** downloads it, checks it's signed by RoleModel, swaps it in and reopens the app. To install a release in the first place, or to move over from a build of your own:
+
+```sh
+curl -fsSL https://github.com/jdmcleod/harvest_but_good/releases/latest/download/install.sh | sh
+```
+
+Releases are signed with RoleModel's Developer ID, so the Keychain stops asking after updates. The first launch after switching from a build of your own asks once, because your saved token trusts the certificate you built with. Click **Always Allow**. Releases are Apple silicon only and not notarized yet. That's fine for the script and the in-app updater, which never mark the download as quarantined. A zip opened by hand from a browser will be blocked by Gatekeeper, though.
+
+**Built it yourself?** The build stamps the commit it came from, and **Check** asks GitHub what has landed on `main` since. It downloads nothing:
 
 ```sh
 git pull && Scripts/build-app.sh
 ```
 
-Quit and reopen afterwards. The card is honest about the awkward cases: a build made with uncommitted changes says so, and a build from your own branch is told it's off `main` rather than behind it.
+Quit and reopen afterwards. A build made with uncommitted changes says so, and a build from your own branch is told it's off `main` rather than behind it.
 
-Nothing is checked unless you ask. The check needs no token, because the repo is public, but that also means GitHub's anonymous rate limit applies — roughly 60 checks an hour from one address, far more than anyone needs.
+Nothing is checked unless you ask. The repo is public, so no token is needed, but GitHub's anonymous rate limit applies: about 60 checks an hour from one address.
 
-If you want this to become a real one-click updater, [Sparkle](https://github.com/sparkle-project/Sparkle) is the standard answer. It wants a Developer ID certificate and notarized builds first — worth knowing that the same Developer ID also puts an end to the Keychain prompts above.
+### Cutting a release
+
+Push a tag from `main`:
+
+```sh
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+`.github/workflows/release.yml` runs the tests, signs the build with the Developer ID kept in the `DEVELOPER_ID_P12` and `DEVELOPER_ID_P12_PASSWORD` secrets, and publishes `HarvestButGood.zip`, `install.sh` and `SHA256SUMS`. The certificate expires on November 25, 2027.
 
 ## The fine print
 

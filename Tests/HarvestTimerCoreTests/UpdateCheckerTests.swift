@@ -123,6 +123,52 @@ func runUpdateCheckerTests() async {
     }
 }
 
+/// GitHub's releases/latest reply, trimmed to the fields the checker reads.
+private func latestRelease(tag: String = "v0.3.0", asset: String = "HarvestButGood.zip") -> String {
+    """
+    {"tag_name": "\(tag)", "html_url": "https://github.com/owner/repo/releases/tag/\(tag)",
+     "assets": [{"name": "\(asset)",
+                 "browser_download_url": "https://github.com/owner/repo/releases/download/\(tag)/\(asset)"}]}
+    """
+}
+
+@Test("Checking for releases")
+func runReleaseCheckTests() async {
+    await test("the latest release gives its version, download, and page") {
+        let (checker, server) = checker([.json(latestRelease())])
+        let release = try await checker.latestRelease()
+        expect(release.version == "0.3.0", "expected the tag without its v, got \(release.version)")
+        expect(
+            release.download.absoluteString
+                == "https://github.com/owner/repo/releases/download/v0.3.0/HarvestButGood.zip",
+            "got \(release.download)"
+        )
+        expect(release.page.absoluteString.hasSuffix("/releases/tag/v0.3.0"), "got \(release.page)")
+        expect(server.requests.first?.path == "/repos/owner/repo/releases/latest", "asked the wrong path")
+    }
+
+    await test("a release without the app zip is reported, not installed from") {
+        let (checker, _) = checker([.json(latestRelease(asset: "notes.txt"))])
+        await expectFailure("malformed", containing: "no HarvestButGood.zip", try await checker.latestRelease())
+    }
+
+    await test("a repo with no releases says so") {
+        let (checker, _) = checker([.status(404, body: "{}")])
+        await expectFailure("noRelease", containing: "No release", try await checker.latestRelease())
+    }
+
+    func release(_ version: String) -> Release {
+        Release(version: version, download: URL(string: "https://x")!, page: URL(string: "https://x")!)
+    }
+
+    test("versions compare by number, not by text") {
+        expect(release("0.10.0").isNewer(than: "0.9.0"), "0.10.0 is newer than 0.9.0")
+        expect(release("1.0.0").isNewer(than: "0.9.9"), "1.0.0 is newer than 0.9.9")
+        expect(!release("0.3.0").isNewer(than: "0.3.0"), "the same version is not newer")
+        expect(!release("0.2.9").isNewer(than: "0.3.0"), "an older version is not newer")
+    }
+}
+
 @Test("What a build knows about itself")
 func runBuildInfoTests() {
     test("the stamps are read off Info.plist") {
@@ -146,6 +192,12 @@ func runBuildInfoTests() {
             expect(build.shortCommit == nil, "expected no short commit from \(empty)")
             expect(build.summary == "This build carries no commit stamp.", "got \(build.summary)")
         }
+    }
+
+    test("a release says which version it is, and a checkout build says none") {
+        let release = BuildInfo(infoDictionary: ["GitCommit": "abc1234", "ReleaseVersion": "0.3.0"])
+        expect(release.version == "0.3.0", "got \(release.version ?? "nil")")
+        expect(BuildInfo(infoDictionary: ["GitCommit": "abc1234"]).version == nil, "a checkout has no version")
     }
 
     test("anything but \"true\" is clean, so a missing stamp is not alarming") {
