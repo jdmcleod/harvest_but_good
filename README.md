@@ -6,10 +6,10 @@
 
 **The Harvest menu bar app that Harvest should have shipped.**
 
-[![macOS](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#requirements)
+[![macOS](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#install)
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)](Package.swift)
 [![Menu Bar Native](https://img.shields.io/badge/Menu%20Bar-Native-34C759)](#what-you-get)
-[![Notarized](https://img.shields.io/badge/Notarized-by%20vibes%2C%20officially-0071e3)](#get-it-running)
+[![Notarized](https://img.shields.io/badge/Notarized-by%20vibes%2C%20officially-0071e3)](#install)
 [![License](https://img.shields.io/badge/Warranty-None%20Whatsoever-lightgrey)](#the-fine-print)
 
 </div>
@@ -34,23 +34,48 @@ So here's the app Harvest should have shipped.
 - **Inline notes and a full day view.** Edit entry notes in place, jump between days, and see how many times you bounced between tasks (no judgment).
 - **Syncs with Harvest every 30 seconds**, so the web and phone apps stay honest too.
 
-## Requirements
+## Install
 
-- macOS 14+
-- Swift toolchain (Command Line Tools are enough — you don't even need Xcode)
-- A Harvest Personal Access Token
+You need macOS 14 or later on Apple silicon, and a Harvest account.
 
-## Get it running
+```sh
+curl -fsSL https://github.com/jdmcleod/harvest_but_good/releases/latest/download/install.sh | sh
+```
+
+That installs the latest release to `/Applications` and opens it. Look up — it's in your menu bar.
+
+Switching from a build of your own? The first launch asks for Keychain access once. Click **Always Allow**.
+
+### Connect to Harvest
+
+The app walks you through this on first launch, but here's the shape of it:
+
+1. It opens https://id.getharvest.com/developers for you. Sign in and click **Create new personal access token**; name it `HarvestTimer`.
+2. Copy the token and the numeric **Account ID** from the *Choose Account* section on that page.
+3. Paste both into the app, click **Validate**, then **Save & Start**.
+
+Both values go straight into the macOS Keychain. Revoke the token from that same Harvest page whenever you like.
+
+### Updating
+
+Open the gear, then **Updates → Check**. If a newer release is out, **Install and Restart** downloads it, swaps it in and reopens the app. Nothing is checked unless you ask.
+
+## Development
+
+You need a Swift toolchain. Command Line Tools are enough to build; the tests need Xcode.
 
 ```sh
 git clone git@github.com:jdmcleod/harvest_but_good.git
 cd harvest_but_good
 Scripts/create-signing-cert.sh   # once — see below
-Scripts/build-app.sh              # builds and installs to /Applications
-open /Applications/HarvestButGood.app
+Scripts/build-app.sh              # builds, installs to /Applications, and opens it
 ```
 
-That's it. Look up — it's in your menu bar.
+Run the tests with Xcode's toolchain:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+```
 
 ### Why the certificate
 
@@ -62,35 +87,15 @@ The first launch after signing still asks for the Keychain. Click **Always Allow
 
 A self-signed certificate only gets you halfway. It carries no Team ID, and macOS ties the Keychain to the certificate only when there is one; without it, access is pinned to that exact build's hash. So the first launch after each rebuild asks once more, and it is another **Always Allow**. An Apple Development identity has a Team ID and is rid of it for good.
 
-## Connect to Harvest
+### Staying up to date
 
-The app walks you through this on first launch, but here's the shape of it:
-
-1. It opens https://id.getharvest.com/developers for you. Sign in and click **Create new personal access token**; name it `HarvestTimer`.
-2. Copy the token and the numeric **Account ID** from the *Choose Account* section on that page.
-3. Paste both into the app, click **Validate**, then **Save & Start**.
-
-Both values go straight into the macOS Keychain. Revoke the token from that same Harvest page whenever you like.
-
-## Staying up to date
-
-**Installed from a release?** Open the gear, then **Updates → Check**. If a newer release is out, **Install and Restart** downloads it, swaps it in and reopens the app. To install a release in the first place, or to move over from a build of your own:
-
-```sh
-curl -fsSL https://github.com/jdmcleod/harvest_but_good/releases/latest/download/install.sh | sh
-```
-
-The first launch after switching from a build of your own asks for Keychain access once. Click **Always Allow**. Releases are Apple silicon only.
-
-**Built it yourself?** The build stamps the commit it came from, and **Check** asks GitHub what has landed on `main` since. It downloads nothing:
+A build of your own stamps the commit it came from, and **Updates → Check** asks GitHub what has landed on `main` since. It downloads nothing:
 
 ```sh
 git pull && Scripts/build-app.sh
 ```
 
-Quit and reopen afterwards. A build made with uncommitted changes says so, and a build from your own branch is told it's off `main` rather than behind it.
-
-Nothing is checked unless you ask. The repo is public, so no token is needed, but GitHub's anonymous rate limit applies: about 60 checks an hour from one address.
+A build made with uncommitted changes says so, and a build from your own branch is told it's off `main` rather than behind it. The check needs no token, but GitHub's anonymous rate limit applies: about 60 checks an hour from one address.
 
 ### Cutting a release
 
