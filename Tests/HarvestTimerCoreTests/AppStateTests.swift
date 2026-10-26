@@ -51,6 +51,22 @@ func runAppStateTests() async {
         }
     }
 
+    // Six days back falls before this week's Monday on every day but Sunday,
+    // so this fails most days if sync only fetches the week.
+    await test("sync finds a timer started before this week") {
+        try await withTemporaryDirectory { directory in
+            let startedAt = Date.now.addingTimeInterval(-6 * 24 * 3600)
+            let fake = FakeHarvest(entries: [
+                entry(
+                    id: 1, day: Day(startedAt), hours: 144, project: 10, task: 100,
+                    running: true, startedAt: startedAt
+                ),
+            ])
+            let state = await syncedState(fake, directory: directory)
+            expect(state.runningEntry?.id == 1, "the running timer should be found")
+        }
+    }
+
     await test("the week runs Monday to Friday whatever day is selected") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)
