@@ -36,6 +36,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     AccountCard()
                     ShortcutCard()
+                    DockCard()
                     IdleDetectionCard()
                     DailyGoalsCard()
                     CustomColorsCard()

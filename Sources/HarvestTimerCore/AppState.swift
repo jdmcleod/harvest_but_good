@@ -42,6 +42,11 @@ public final class AppState {
         }
     }
     public var onHotKeyChange: ((HotKey) -> Void)?
+    /// Puts the app in the Dock and the Cmd-Tab switcher, as a regular app
+    /// rather than a menu bar agent.
+    public var showsInDock: Bool {
+        didSet { defaults.set(showsInDock, forKey: Self.showsInDockKey) }
+    }
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -56,6 +61,7 @@ public final class AppState {
     private static let afkToleranceKey = "afkToleranceMinutes"
     private static let customColorsKey = "customColors"
     private static let hotKeyKey = "hotKey"
+    private static let showsInDockKey = "showsInDock"
     /// Who the token belongs to and where their account lives, as the first
     /// sync after connecting learns them. Nil until then.
     public private(set) var currentUser: HarvestUser?
@@ -96,6 +102,7 @@ public final class AppState {
         afkToleranceMinutes = Self.loadAFKTolerance(from: defaults)
         customColors = Self.loadCustomColors(from: defaults)
         hotKey = Self.loadHotKey(from: defaults)
+        showsInDock = defaults.bool(forKey: Self.showsInDockKey)
         credentials = credentialStore.load()
         if let credentials, BuildInfo.current.version != nil {
             credentialStore.adoptForRelease(credentials, defaults: defaults)
@@ -129,6 +136,7 @@ public final class AppState {
         afkToleranceMinutes = Self.loadAFKTolerance(from: self.defaults)
         customColors = Self.loadCustomColors(from: self.defaults)
         hotKey = Self.loadHotKey(from: self.defaults)
+        showsInDock = self.defaults.bool(forKey: Self.showsInDockKey)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
