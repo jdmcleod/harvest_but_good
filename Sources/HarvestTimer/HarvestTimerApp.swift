@@ -21,10 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var previousApp: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = Self.buildMainMenu()
         state = AppState()
         state.start()
+        followDockSetting()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -73,6 +73,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.backgroundColor = state.palette.header
         } onChange: { [weak self] in
             Task { @MainActor in self?.followColorTheme() }
+        }
+    }
+
+    private func followDockSetting() {
+        withObservationTracking {
+            _ = NSApp.setActivationPolicy(state.showsInDock ? .regular : .accessory)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.followDockSetting()
+                // Leaving the Dock deactivates the app, which would drop the
+                // window behind whatever is next.
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
     }
 
