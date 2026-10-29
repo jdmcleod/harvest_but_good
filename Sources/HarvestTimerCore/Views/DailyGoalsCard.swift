@@ -17,45 +17,52 @@ struct DailyGoalsCard: View {
     /// Almanac switches — the goal itself, the base Almanac's time off
     /// scales, or the fallback for whenever Almanac has nothing to say.
     private var weekdayGoalsCaption: String {
-        switch (state.goalSettings.almanacPaceEnabled, state.goalSettings.almanacTimeOffEnabled) {
-        case (true, _):
-            return "The fallback for whenever Almanac's pace is off or hasn't answered yet. Leave a day blank if you don't work it."
-        case (false, true):
-            return "The base Almanac adjusts for time off. Leave a day blank if you don't work it."
-        case (false, false):
-            return "Leave a day blank if you don't work it."
-        }
+        state.goalSettings.almanacTimeOffEnabled
+            ? "The base Almanac adjusts for time off. Leave a day blank if you don't work it."
+            : "Leave a day blank if you don't work it."
     }
 
     var body: some View {
         SettingsCard(title: "Daily Pace", systemImage: "target", isOn: isEnabled) {
-            Text(
-                "Hours you aim for each day and the break you usually take. Breaks push back when you finish, not the goal. "
-                    + weekdayGoalsCaption
-            )
-                .foregroundStyle(.secondary)
-            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-                GridRow {
-                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                    ForEach(Weekday.workdays, id: \.self) { weekday in
-                        Text(weekday.shortName.uppercased())
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .gridColumnAlignment(.center)
-                    }
-                }
-                ForEach(GoalField.Kind.allCases, id: \.self) { kind in
-                    GridRow {
-                        Text(kind.label)
-                            .foregroundStyle(.secondary)
-                        ForEach(Weekday.workdays, id: \.self) { weekday in
-                            GoalField(weekday: weekday, kind: kind)
-                        }
-                    }
-                }
+            // Almanac's pace replaces the hand-set hours, so they're put away
+            // rather than left looking editable. What's saved still stands
+            // in for any day Almanac hasn't answered.
+            if state.goalSettings.almanacPaceEnabled {
+                Text("Almanac sets each day's goal. Turn its pace off below to set your own hours and breaks.")
+                    .foregroundStyle(.secondary)
+            } else {
+                weekdayGoals
             }
             Divider()
             AlmanacPaceSection()
+        }
+    }
+
+    @ViewBuilder private var weekdayGoals: some View {
+        Text(
+            "Hours you aim for each day and the break you usually take. Breaks push back when you finish, not the goal. "
+                + weekdayGoalsCaption
+        )
+            .foregroundStyle(.secondary)
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+            GridRow {
+                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                ForEach(Weekday.workdays, id: \.self) { weekday in
+                    Text(weekday.shortName.uppercased())
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.center)
+                }
+            }
+            ForEach(GoalField.Kind.allCases, id: \.self) { kind in
+                GridRow {
+                    Text(kind.label)
+                        .foregroundStyle(.secondary)
+                    ForEach(Weekday.workdays, id: \.self) { weekday in
+                        GoalField(weekday: weekday, kind: kind)
+                    }
+                }
+            }
         }
     }
 }
@@ -122,17 +129,18 @@ private struct GoalField: View {
 
 /// Almanac's suggested pace and its time off, as two independent inputs to
 /// the goal above instead of one combined switch — an experiment, not the
-/// finished feature.
+/// finished feature. Saved credentials fold to one line with an Edit button,
+/// like the Harvest account at the top of Settings.
 private struct AlmanacPaceSection: View {
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
 
     @State private var apiKey = ""
     @State private var email = ""
+    @State private var editing = false
     @State private var syncing = false
-    @FocusState private var focused: Field?
-
-    private enum Field { case apiKey, email }
+    @State private var showingDetails = false
+    @FocusState private var keyFocused: Bool
 
     private var paceEnabled: Binding<Bool> {
         Binding(
@@ -148,10 +156,12 @@ private struct AlmanacPaceSection: View {
         )
     }
 
-    /// Whether either switch needs the key and email fields shown at all.
+    /// Whether either switch needs Almanac connected at all.
     private var anyEnabled: Bool {
         state.goalSettings.almanacPaceEnabled || state.goalSettings.almanacTimeOffEnabled
     }
+
+    private var saved: AlmanacCredentials? { state.credentials?.almanac }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -162,33 +172,17 @@ private struct AlmanacPaceSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                toggleRow(
-                    "Use Almanac's suggested pace as the goal",
-                    isOn: paceEnabled
-                )
-                toggleRow(
-                    "Adjust for Almanac time off",
-                    isOn: timeOffEnabled
-                )
+                toggleRow("Use Almanac's suggested pace as the goal", isOn: paceEnabled)
+                toggleRow("Adjust for Almanac time off", isOn: timeOffEnabled)
                 if anyEnabled {
-                    TextField("Almanac API key", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($focused, equals: .apiKey)
-                        .onSubmit(commit)
-                    TextField("Email at Almanac", text: $email)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($focused, equals: .email)
-                        .onSubmit(commit)
-                    status
-                    if state.goalSettings.almanacTimeOffEnabled {
-                        constraintDebugList
+                    if let saved, !editing {
+                        connection(saved)
+                        details
+                    } else {
+                        form
                     }
                 }
             }
-        }
-        .onAppear(perform: load)
-        .onChange(of: focused) { _, now in
-            if now == nil { commit() }
         }
     }
 
@@ -204,25 +198,116 @@ private struct AlmanacPaceSection: View {
         }
     }
 
-    @ViewBuilder private var status: some View {
-        HStack(spacing: 8) {
+    private func connection(_ saved: AlmanacCredentials) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(state.almanac.isUnavailable ? palette.danger : palette.success)
+                    .frame(width: 7, height: 7)
+                Text(saved.email)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("Edit…") {
+                    apiKey = saved.apiKey
+                    email = saved.email
+                    editing = true
+                }
+                .controlSize(.small)
+                Button(action: sync) {
+                    HStack(spacing: 5) {
+                        if syncing {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text(syncing ? "Syncing…" : "Sync Now")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(syncing)
+            }
             if state.almanac.isUnavailable {
                 Text("Almanac didn't accept that — check the key and email.")
                     .font(.caption)
                     .foregroundStyle(palette.danger)
-            } else {
-                Text(statusText)
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
             }
-            Spacer()
-            // Saves first regardless of what's focused — clicking this
-            // shouldn't depend on AppKit having noticed a field lost focus.
-            Button("Sync Now", action: commit)
-                .buttonStyle(.link)
+        }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SecureField("Almanac API key", text: $apiKey)
+                .textFieldStyle(.roundedBorder)
+                .focused($keyFocused)
+                .onSubmit(save)
+            TextField("Email at Almanac", text: $email)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+            HStack {
+                if saved != nil {
+                    Button("Remove", role: .destructive) {
+                        state.removeAlmanacCredentials()
+                        apiKey = ""
+                        email = ""
+                        editing = false
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(palette.danger)
+                    .font(.caption)
+                }
+                Spacer()
+                if saved != nil {
+                    Button("Cancel") { editing = false }
+                        .controlSize(.small)
+                }
+                Button("Save", action: save)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(apiKey.isEmpty || email.isEmpty)
+            }
+        }
+        .onAppear { if editing { keyFocused = true } }
+    }
+
+    /// What Almanac last sent, folded away under the sync row: useful when a
+    /// number looks wrong, noise the rest of the time.
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.snappy(duration: 0.15)) { showingDetails.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(showingDetails ? 90 : 0))
+                    Text(showingDetails ? "Hide details" : "Show details")
+                }
                 .font(.caption)
-                .disabled(apiKey.isEmpty || email.isEmpty)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointingCursor()
+            if showingDetails {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusText)
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    if state.goalSettings.almanacTimeOffEnabled {
+                        ForEach(Array(state.almanac.constraints.enumerated()), id: \.offset) { _, constraint in
+                            Text(constraintDebugLine(constraint))
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .textSelection(.enabled)
+                .padding(.leading, 14)
+            }
         }
     }
 
@@ -230,34 +315,18 @@ private struct AlmanacPaceSection: View {
     /// new enough that a surprising number is more likely than not.
     private var statusText: String {
         var parts: [String] = []
-        if state.goalSettings.almanacPaceEnabled {
-            if let pace = state.almanac.pace {
-                parts.append("pace \(Hours.formatted(pace.suggestedDailyPace))/day")
-                parts.append("target \(Hours.formatted(pace.target))")
-                parts.append("worked \(Hours.formatted(pace.worked))")
-                parts.append("remaining \(Hours.formatted(pace.remaining))")
-                parts.append("person #\(state.almanac.personId ?? "?")")
-            }
+        if state.goalSettings.almanacPaceEnabled, let pace = state.almanac.pace {
+            parts.append("pace \(Hours.formatted(pace.suggestedDailyPace))/day")
+            parts.append("target \(Hours.formatted(pace.target))")
+            parts.append("worked \(Hours.formatted(pace.worked))")
+            parts.append("remaining \(Hours.formatted(pace.remaining))")
+            parts.append("person #\(state.almanac.personId ?? "?")")
         }
-        if state.goalSettings.almanacTimeOffEnabled, !state.almanac.constraints.isEmpty {
+        if state.goalSettings.almanacTimeOffEnabled {
             parts.append("\(state.almanac.constraints.count) time off item(s) synced")
         }
-        guard !parts.isEmpty else { return syncing ? "Syncing…" : "Not synced yet" }
+        guard !parts.isEmpty else { return "Not synced yet" }
         return parts.joined(separator: " · ")
-    }
-
-    /// Every synced constraint with exactly what was parsed out of it —
-    /// temporary, while a scaled goal not matching a constraint's own times
-    /// is more likely to be a decode problem than anything else.
-    private var constraintDebugList: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(state.almanac.constraints.enumerated()), id: \.offset) { _, constraint in
-                Text(constraintDebugLine(constraint))
-                    .font(.caption2)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private func constraintDebugLine(_ constraint: AlmanacConstraint) -> String {
@@ -271,22 +340,16 @@ private struct AlmanacPaceSection: View {
             + " · partial=\(constraint.isPartialDay) · billableOnly=\(constraint.billableOnly)"
     }
 
-    private func load() {
-        let almanac = state.credentials?.almanac
-        apiKey = almanac?.apiKey ?? ""
-        email = almanac?.email ?? ""
+    /// Saves what's in the fields and syncs straight away, so the details
+    /// don't sit stale until the next scheduled sync.
+    private func save() {
+        guard !apiKey.isEmpty, !email.isEmpty else { return }
+        try? state.saveAlmanacCredentials(apiKey: apiKey, email: email)
+        editing = false
+        sync()
     }
 
-    /// Saves what's in the fields, and syncs right away so the status line
-    /// doesn't sit stale until the next scheduled sync. Reachable from losing
-    /// focus, pressing Return, or the Sync Now button, so nothing typed here
-    /// depends on AppKit deciding a field has lost focus.
-    private func commit() {
-        guard !apiKey.isEmpty, !email.isEmpty else {
-            if apiKey.isEmpty, email.isEmpty { state.removeAlmanacCredentials() }
-            return
-        }
-        try? state.saveAlmanacCredentials(apiKey: apiKey, email: email)
+    private func sync() {
         syncing = true
         Task {
             await state.refreshAlmanac(force: true)
