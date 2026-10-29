@@ -3,6 +3,7 @@ import SwiftUI
 struct ProjectTaskPickerSheet: View {
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
+    @Environment(WindowCommands.self) private var commands
     @Environment(\.dismiss) private var dismiss
     let title: String
     let actionLabel: String
@@ -19,6 +20,9 @@ struct ProjectTaskPickerSheet: View {
     @State private var selectedTaskId: Int64?
     @State private var notes = ""
     @State private var highlightedAssignmentId: Int64?
+    /// Return can reach both the notes box and the default button, and one
+    /// press must not start two timers.
+    @State private var confirmed = false
     @FocusState private var searchFocused: Bool
     @FocusState private var notesFocused: Bool
 
@@ -41,10 +45,15 @@ struct ProjectTaskPickerSheet: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else if let assignment = selectedAssignment {
-                TaskStepView(assignment: assignment, selectedTaskId: $selectedTaskId) {
-                    selectedAssignmentId = nil
-                    selectedTaskId = nil
-                }
+                TaskStepView(
+                    assignment: assignment,
+                    selectedTaskId: $selectedTaskId,
+                    onBack: {
+                        selectedAssignmentId = nil
+                        selectedTaskId = nil
+                    },
+                    takesFocus: !showsNotes
+                )
                 if showsNotes { notesField }
             } else {
                 projectStep
@@ -56,6 +65,7 @@ struct ProjectTaskPickerSheet: View {
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 Button(actionLabel) { confirm() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
@@ -67,6 +77,13 @@ struct ProjectTaskPickerSheet: View {
         .task {
             await state.loadProjectAssignments(force: true)
             applyInitialSelection()
+        }
+        .onDisappear { commands.backStep = nil }
+        .onChange(of: selectedAssignmentId) { _, id in
+            commands.backStep = id == nil ? nil : {
+                selectedAssignmentId = nil
+                selectedTaskId = nil
+            }
         }
     }
 
@@ -108,7 +125,7 @@ struct ProjectTaskPickerSheet: View {
 
     private var notesField: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Notes (optional)")
+            Text("Notes (optional) · ↩ starts · ↑↓ change the task")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             TextField("Notes", text: $notes, axis: .vertical)
@@ -121,7 +138,24 @@ struct ProjectTaskPickerSheet: View {
                         .fill(Color.primary.opacity(notesFocused ? 0.06 : 0.035))
                 )
                 .focused($notesFocused)
+                .onSubmit { confirm() }
+                // Straight to the notes once the project is picked: the task
+                // usually comes with it, and ↑↓ here still change it. A beat
+                // late, so the search field it replaces has let go first.
+                .task {
+                    try? await Task.sleep(for: .milliseconds(80))
+                    notesFocused = true
+                }
+                .onKeyPress(.upArrow) { moveTask(by: -1) }
+                .onKeyPress(.downArrow) { moveTask(by: 1) }
         }
+    }
+
+    private func moveTask(by step: Int) -> KeyPress.Result {
+        guard !notes.contains("\n"), let assignment = selectedAssignment else { return .ignored }
+        let ids = assignment.taskAssignments.map(\.task.id)
+        selectedTaskId = ListCursor.moved(from: selectedTaskId, by: step, in: ids) ?? selectedTaskId
+        return .handled
     }
 
     private func applyInitialSelection() {
@@ -175,7 +209,8 @@ struct ProjectTaskPickerSheet: View {
     }
 
     private func confirm() {
-        guard let assignment = selectedAssignment, let task = selectedTask else { return }
+        guard !confirmed, let assignment = selectedAssignment, let task = selectedTask else { return }
+        confirmed = dismissesOnConfirm
         onConfirm(assignment, task, notes)
         if dismissesOnConfirm { dismiss() }
     }

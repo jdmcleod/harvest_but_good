@@ -26,7 +26,8 @@ So here's the app Harvest should have shipped.
 ## What you get
 
 - **Menu bar first.** No Dock icon, no window clutter. Today's total hours sit right next to a tidy timer icon.
-- **A shortcut from anywhere.** Press ⌃⌥H to bring the window up over whatever you're in, and again to hide it and land back in that app. Change it under **Settings → Keyboard Shortcut**.
+- **A shortcut from anywhere.** Press ⌃⌥H to bring the window up over whatever you're in, and again to hide it and land back in that app. Change it in the shortcut list (press ? in the window).
+- **Your own keys.** Press ? in the window for the shortcut list: click any action and press the keys you want, or **Use Suggested** to fill in a set (Space stops or resumes, N writes a note, E edits the duration, arrows move between entries and days). A letter a favorite already uses is skipped. Nothing but ? and ⌘, is bound until you choose to.
 - **Favorites at one click, or one key.** No dropdown safari. With the window in front, 1–9 and 0 start your first ten favorites; give any favorite its own key under **Edit Favorite → Shortcut**.
 - **Search that finds things.** Type across project, client, and task names at once — `Billy Dev` turns up the Billy Graham project, and picking it lands you straight on the Development task.
 - **An actual day timeline.** A 7 AM–7 PM view with color-coded blocks for every start→stop interval, because "3.2 hours" tells you nothing about where your morning went. Harvest's own API doesn't expose these timestamps — this app logs them itself, locally.

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import HarvestTimerCore
 import SwiftUI
 
@@ -13,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var state: AppState!
+    private var commands: WindowCommands!
     private var statusItem: NSStatusItem!
     private var window: NSWindow!
     private var hasRestoredFrame = false
@@ -25,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         state = AppState()
         state.start()
         followDockSetting()
+        commands = WindowCommands(state: state)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -43,7 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ])
         }
 
-        let rootHosting = NSHostingController(rootView: RootView().environment(state))
+        let rootHosting = NSHostingController(
+            rootView: RootView().environment(state).environment(commands)
+        )
         window = NSWindow(contentViewController: rootHosting)
         window.title = "HarvestButGood"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -61,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         HotKeyCenter.shared.onPress = { [weak self] in self?.toggleFromShortcut() }
         HotKeyCenter.shared.register(state.hotKey)
         state.onHotKeyChange = { HotKeyCenter.shared.register($0) }
-        watchFavoriteKeys()
+        watchWindowKeys()
         showWindow()
     }
 
@@ -105,6 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return accessory
     }
 
+    func applicationDidResignActive(_ notification: Notification) {
+        commands.dismissOverlays()
+    }
+
     func windowWillClose(_ notification: Notification) {
         NSApp.terminate(nil)
     }
@@ -142,22 +151,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// A local monitor rather than SwiftUI's onKeyPress, which only hears
     /// keys while a view holds focus. Sheets are windows of their own, so
-    /// typing in one never reaches here, and a field in the main window keeps
-    /// its digits.
-    private func watchFavoriteKeys() {
+    /// typing in one never reaches the bare keys, and a field in the main
+    /// window keeps its letters.
+    private func watchWindowKeys() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control])
-            guard modifiers.isEmpty, !event.isARepeat,
-                  let key = event.charactersIgnoringModifiers, key.count == 1 else { return event }
-            let isMain = event.window.map(ObjectIdentifier.init)
-            let handled = MainActor.assumeIsolated {
-                guard let self, isMain == ObjectIdentifier(self.window),
-                      !(self.window.firstResponder is NSText) else { return false }
-                return self.state.startFavorite(forKey: key)
-            }
+            let handled = MainActor.assumeIsolated { self?.handleWindowKey(event) ?? false }
             return handled ? nil : event
         }
     }
+
+    private func handleWindowKey(_ event: NSEvent) -> Bool {
+        guard let eventWindow = event.window, !commands.isRecordingShortcut else { return false }
+        // Here rather than in SwiftUI, where an empty text field may eat the
+        // press before any key handler hears it.
+        if event.keyCode == UInt16(kVK_Delete),
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+           let back = commands.backStep,
+           (eventWindow.firstResponder as? NSTextView)?.string.isEmpty ?? true {
+            back()
+            return true
+        }
+        guard eventWindow == window, window.attachedSheet == nil,
+              let characters = event.charactersIgnoringModifiers, !characters.isEmpty,
+              let press = HotKey(event: event, allowingBareKey: true) else { return false }
+        // The shortcut card sits over the window like a sheet would: Esc or
+        // its own shortcut closes it, and the bare keys behind it wait.
+        if commands.showingShortcuts {
+            if event.keyCode == UInt16(kVK_Escape) || state.command(for: press) == .shortcuts {
+                commands.showingShortcuts = false
+                return true
+            }
+            return press.isBare
+        }
+        // While a field is being typed in, its keys are its own; only the ⌘
+        // shortcuts that mean nothing to a field get through.
+        if window.firstResponder is NSText,
+           !event.modifierFlags.contains(.command) || Self.editingKeys.contains(Int(event.keyCode)) {
+            return false
+        }
+        return commands.handleKey(press, characters: characters, isRepeat: event.isARepeat)
+    }
+
+    private static let editingKeys: Set = [
+        kVK_Delete, kVK_ForwardDelete, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
+    ]
 
     /// The status item's window lives on whichever display's menu bar took
     /// the click, so its screen is the one the user is looking at.
@@ -176,6 +213,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // Nothing focused, so the first press is a shortcut rather than typing
+        // into whichever notes box AppKit or SwiftUI would pick. Again on the
+        // next turn, since SwiftUI hands out its initial focus late.
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.async { [weak self] in self?.window.makeFirstResponder(nil) }
     }
 
     private static func buildMainMenu() -> NSMenu {

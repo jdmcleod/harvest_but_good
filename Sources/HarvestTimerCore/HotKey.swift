@@ -1,9 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// A global shortcut, stored as Carbon key code and modifier bits because
-/// that's what `RegisterEventHotKey` takes. Carbon hot keys need no
-/// Accessibility permission, unlike an event tap.
+/// A shortcut, stored as Carbon key code and modifier bits because that's
+/// what `RegisterEventHotKey` takes. Carbon hot keys need no Accessibility
+/// permission, unlike an event tap. The window's own shortcuts use the same
+/// type, and those may be a bare key.
 public struct HotKey: Codable, Equatable, Sendable {
     public let keyCode: UInt32
     public let modifiers: UInt32
@@ -28,24 +29,47 @@ public struct HotKey: Codable, Equatable, Sendable {
         var text = ""
         if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
         if modifiers & UInt32(optionKey) != 0 { text += "⌥" }
-        if modifiers & UInt32(shiftKey) != 0 { text += "⇧" }
+        if modifiers & UInt32(shiftKey) != 0, !shiftIsInKey { text += "⇧" }
         if modifiers & UInt32(cmdKey) != 0 { text += "⌘" }
         return text + key
     }
 
+    /// One keycap per modifier, then the key.
+    public var displayParts: [String] {
+        display.dropLast(key.count).map(String.init) + [key]
+    }
+
+    /// ⇧/ is recorded as "?", which already says Shift.
+    private var shiftIsInKey: Bool {
+        key.count == 1 && !key.contains(where: \.isLetter) && !Self.keyNames.values.contains(key)
+    }
+
+    /// Compared by key code and modifiers alone: the name a press yields can
+    /// differ from the stored one by case or keyboard layout.
+    public func matches(_ event: NSEvent) -> Bool {
+        HotKey(event: event, allowingBareKey: true).map(matches) ?? false
+    }
+
+    func matches(_ other: HotKey) -> Bool {
+        other.keyCode == keyCode && other.modifiers == modifiers
+    }
+
     /// Nil unless the press holds ⌘, ⌥ or ⌃. A bare letter as a global
     /// shortcut would swallow that letter in every other app.
-    public init?(event: NSEvent) {
+    /// `allowingBareKey` is for the window's own shortcuts, which only hear
+    /// keys while it is in front.
+    public init?(event: NSEvent, allowingBareKey: Bool = false) {
         self.init(
             keyCode: event.keyCode,
             flags: event.modifierFlags,
-            characters: event.charactersIgnoringModifiers
+            characters: event.charactersIgnoringModifiers,
+            allowingBareKey: allowingBareKey
         )
     }
 
-    init?(keyCode: UInt16, flags: NSEvent.ModifierFlags, characters: String?) {
+    init?(keyCode: UInt16, flags: NSEvent.ModifierFlags, characters: String?, allowingBareKey: Bool = false) {
         let flags = flags.intersection(.deviceIndependentFlagsMask)
-        guard !flags.isDisjoint(with: [.command, .option, .control]) else { return nil }
+        guard allowingBareKey || !flags.isDisjoint(with: [.command, .option, .control]) else { return nil }
         var modifiers: UInt32 = 0
         if flags.contains(.command) { modifiers |= UInt32(cmdKey) }
         if flags.contains(.option) { modifiers |= UInt32(optionKey) }
@@ -57,7 +81,7 @@ public struct HotKey: Codable, Equatable, Sendable {
     }
 
     static let keyNames: [Int: String] = [
-        kVK_Space: "Space", kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫",
+        kVK_Space: "Space", kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_Escape: "esc",
         kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
         kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
         kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",

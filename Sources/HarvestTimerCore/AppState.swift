@@ -38,6 +38,9 @@ public final class AppState {
             if let data = try? JSONEncoder().encode(hotKey) {
                 defaults.set(data, forKey: Self.hotKeyKey)
             }
+            // The global press reaches the app before the window's own does,
+            // so a window shortcut on the same keys would never run.
+            if let command = command(for: hotKey) { keyBindings[command] = nil }
             onHotKeyChange?(hotKey)
         }
     }
@@ -46,6 +49,13 @@ public final class AppState {
     /// rather than a menu bar agent.
     public var showsInDock: Bool {
         didSet { defaults.set(showsInDock, forKey: Self.showsInDockKey) }
+    }
+    /// The window's own shortcuts, which only work while it is in front.
+    public private(set) var keyBindings: [WindowCommand: HotKey] {
+        didSet {
+            let stored = Dictionary(uniqueKeysWithValues: keyBindings.map { ($0.key.rawValue, $0.value) })
+            if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.keyBindingsKey) }
+        }
     }
     public var onAFKDetected: (() -> Void)?
 
@@ -62,6 +72,7 @@ public final class AppState {
     private static let customColorsKey = "customColors"
     private static let hotKeyKey = "hotKey"
     private static let showsInDockKey = "showsInDock"
+    private static let keyBindingsKey = "keyBindings"
     /// Who the token belongs to and where their account lives, as the first
     /// sync after connecting learns them. Nil until then.
     public private(set) var currentUser: HarvestUser?
@@ -103,6 +114,7 @@ public final class AppState {
         customColors = Self.loadCustomColors(from: defaults)
         hotKey = Self.loadHotKey(from: defaults)
         showsInDock = defaults.bool(forKey: Self.showsInDockKey)
+        keyBindings = Self.loadKeyBindings(from: defaults)
         credentials = credentialStore.load()
         if let credentials, BuildInfo.current.version != nil {
             credentialStore.adoptForRelease(credentials, defaults: defaults)
@@ -137,6 +149,7 @@ public final class AppState {
         customColors = Self.loadCustomColors(from: self.defaults)
         hotKey = Self.loadHotKey(from: self.defaults)
         showsInDock = self.defaults.bool(forKey: Self.showsInDockKey)
+        keyBindings = Self.loadKeyBindings(from: self.defaults)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
@@ -156,6 +169,55 @@ public final class AppState {
             .flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? .standard
     }
 
+    private static func loadKeyBindings(from defaults: UserDefaults) -> [WindowCommand: HotKey] {
+        guard let data = defaults.data(forKey: keyBindingsKey),
+              let stored = try? JSONDecoder().decode([String: HotKey].self, from: data) else {
+            return WindowCommand.defaults
+        }
+        return Dictionary(uniqueKeysWithValues: stored.compactMap { name, key in
+            WindowCommand(rawValue: name).map { ($0, key) }
+        })
+    }
+
+    /// Gives `command` the press, taking it off whichever command had it, or
+    /// clears the command's shortcut when `key` is nil.
+    public func setBinding(_ key: HotKey?, for command: WindowCommand) {
+        var bindings = keyBindings.filter { other, bound in other != command && !(key?.matches(bound) ?? false) }
+        bindings[command] = key
+        keyBindings = bindings
+    }
+
+    /// Fills in the suggestion for every command without a shortcut, leaving
+    /// alone any the user has set, any press already in use and any letter a
+    /// favorite starts with.
+    public func useSuggestedBindings() {
+        var bindings = keyBindings
+        for command in WindowCommand.allCases where bindings[command] == nil {
+            let suggested = command.suggested
+            guard isFree(suggested),
+                  !bindings.values.contains(where: suggested.matches) else { continue }
+            bindings[command] = suggested
+        }
+        keyBindings = bindings
+    }
+
+    /// Back to a fresh install's: only Settings and the shortcut list keep a
+    /// key, so there is still a way back to set the rest.
+    public func clearBindings() {
+        keyBindings = WindowCommand.defaults.filter { !hotKey.matches($0.value) }
+    }
+
+    /// Whether nothing else answers to the press: not show/hide, which is
+    /// heard first, and not a favorite, which a bare key starts first.
+    public func isFree(_ press: HotKey) -> Bool {
+        !hotKey.matches(press)
+            && !(press.isBare && FavoriteShortcuts.favorite(forKey: press.key, in: favorites) != nil)
+    }
+
+    public func command(for press: HotKey) -> WindowCommand? {
+        keyBindings.first { $0.value.matches(press) }?.key
+    }
+
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
 
     /// Whether the day on screen is the one today falls in, so a control can
@@ -169,6 +231,36 @@ public final class AppState {
     /// midnight, and so a stale `now` never marks two days as today at once.
     public func isToday(_ day: Date) -> Bool {
         Calendar.current.isDate(day, inSameDayAs: now)
+    }
+
+    /// Moves the viewed day, a week at a time when `days` is ±7, and fetches
+    /// it when it falls outside the week already loaded.
+    public func shiftDay(by days: Int) {
+        show(day: Calendar.current.date(byAdding: .day, value: days, to: selectedDay)!)
+    }
+
+    public func show(day: Date) {
+        let leavesWeek = !weekDays.contains { Calendar.current.isDate($0, inSameDayAs: day) }
+        selectedDay = day
+        if leavesWeek { Task { await sync() } }
+    }
+
+    /// Steps the picked entry through the viewed day's list, J/K style.
+    public func selectEntry(by step: Int) {
+        let ids = entries(forDay: selectedDay).map(\.id)
+        selectedEntryId = ListCursor.moved(from: selectedEntryId, by: step, in: ids)
+    }
+
+    /// What a key aimed at "the entry" acts on: the one picked in the list,
+    /// else the one with the clock running.
+    public var targetEntry: TimeEntry? {
+        selectedEntryId.flatMap(entry(withId:)) ?? runningEntry
+    }
+
+    /// Shifts an entry's hours by whole minutes, never below zero.
+    public func adjust(_ entry: TimeEntry, byMinutes minutes: Int) async {
+        let hours = max(0, Hours.toNearestMinute(liveHours(for: entry)) + Double(minutes) / 60)
+        await updateHours(entry, hours: hours)
     }
 
     public func goToToday() {
