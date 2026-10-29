@@ -1,22 +1,57 @@
 import Carbon.HIToolbox
 import SwiftUI
 
-/// The global shortcut that shows the window from anywhere and, pressed
-/// again, hides it and hands focus back to the app you came from.
+/// The shortcuts someone can pick for themselves: two that work from any app
+/// and the palette's own, which only works with the window in front.
 struct ShortcutCard: View {
+    @Environment(AppState.self) private var state
+
     var body: some View {
-        SettingsCard(title: "Keyboard Shortcut", systemImage: "keyboard") {
-            HotKeyRecorder()
+        @Bindable var state = state
+        SettingsCard(title: "Keyboard Shortcuts", systemImage: "keyboard") {
+            EmptyView()
         } content: {
-            Text("Show or hide the window from any app. Hiding it this way puts you back where you were.")
-                .foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                row(
+                    "Show or hide the window",
+                    detail: "From any app. Hiding it this way puts you back where you were.",
+                    recorder: HotKeyRecorder(key: $state.hotKey, slot: .showHide)
+                )
+                row(
+                    "Open with the command palette",
+                    detail: "From any app, with the palette already up.",
+                    recorder: HotKeyRecorder(key: $state.openToPaletteHotKey, slot: .openToPalette)
+                )
+                row(
+                    "Command palette",
+                    detail: "While the window is in front. Press ? there for every other key.",
+                    recorder: HotKeyRecorder(key: $state.paletteHotKey, slot: nil)
+                )
+            }
+        }
+    }
+
+    private func row(_ title: String, detail: String, recorder: HotKeyRecorder) -> some View {
+        GridRow {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            recorder
+                .gridColumnAlignment(.trailing)
         }
     }
 }
 
 private struct HotKeyRecorder: View {
-    @Environment(AppState.self) private var state
     @Environment(\.palette) private var palette
+    @Binding var key: HotKey
+    /// Nil for a shortcut that only works inside the app, which no other app
+    /// can have taken.
+    let slot: HotKeySlot?
     @State private var recording = false
     @State private var monitor: Any?
     @State private var taken: HotKey?
@@ -26,7 +61,7 @@ private struct HotKeyRecorder: View {
             Button {
                 recording ? stop() : start()
             } label: {
-                Text(recording ? "Type a shortcut…" : state.hotKey.display)
+                Text(recording ? "Type a shortcut…" : key.display)
                     .font(.system(size: 12.5, weight: .semibold))
                     .padding(.horizontal, 12)
                     .frame(minWidth: 70, minHeight: 26)
@@ -59,13 +94,13 @@ private struct HotKeyRecorder: View {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == UInt16(kVK_Escape) {
                 stop()
-            } else if let key = HotKey(event: event) {
+            } else if let picked = HotKey(event: event) {
                 // Tried before it is kept, so a combination another app
                 // owns never replaces one that works.
-                if HotKeyCenter.shared.register(key) {
-                    state.hotKey = key
+                if let slot, !HotKeyCenter.shared.register(picked, for: slot) {
+                    taken = picked
                 } else {
-                    taken = key
+                    key = picked
                 }
                 stop()
             }
@@ -78,6 +113,6 @@ private struct HotKeyRecorder: View {
         monitor = nil
         guard recording else { return }
         recording = false
-        HotKeyCenter.shared.register(state.hotKey)
+        HotKeyCenter.shared.resume()
     }
 }

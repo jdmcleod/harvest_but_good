@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import HarvestTimerCore
 import SwiftUI
 
@@ -13,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var state: AppState!
+    private var commands: WindowCommands!
     private var statusItem: NSStatusItem!
     private var window: NSWindow!
     private var hasRestoredFrame = false
@@ -25,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         state = AppState()
         state.start()
         followDockSetting()
+        commands = WindowCommands(state: state)
+        commands.onHideWindow = { [weak self] in self?.hideWindow() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -43,7 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ])
         }
 
-        let rootHosting = NSHostingController(rootView: RootView().environment(state))
+        let rootHosting = NSHostingController(
+            rootView: RootView().environment(state).environment(commands)
+        )
         window = NSWindow(contentViewController: rootHosting)
         window.title = "HarvestButGood"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -58,10 +64,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         state.onAFKDetected = { [weak self] in self?.showWindow() }
 
-        HotKeyCenter.shared.onPress = { [weak self] in self?.toggleFromShortcut() }
-        HotKeyCenter.shared.register(state.hotKey)
-        state.onHotKeyChange = { HotKeyCenter.shared.register($0) }
-        watchFavoriteKeys()
+        HotKeyCenter.shared.onPress = { [weak self] slot in
+            switch slot {
+            case .showHide: self?.toggleFromShortcut()
+            case .openToPalette: self?.openToPalette()
+            }
+        }
+        HotKeyCenter.shared.register(state.hotKey, for: .showHide)
+        HotKeyCenter.shared.register(state.openToPaletteHotKey, for: .openToPalette)
+        state.onHotKeyChange = { slot, key in HotKeyCenter.shared.register(key, for: slot) }
+        watchWindowKeys()
         showWindow()
     }
 
@@ -105,6 +117,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return accessory
     }
 
+    func applicationDidResignActive(_ notification: Notification) {
+        commands.dismissOverlays()
+    }
+
     func windowWillClose(_ notification: Notification) {
         NSApp.terminate(nil)
     }
@@ -131,6 +147,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showWindow()
             return
         }
+        hideWindow()
+    }
+
+    /// Up with the palette open from any app; pressed again while the palette
+    /// is what you're looking at, it closes the palette.
+    private func openToPalette() {
+        if window.isVisible, NSApp.isActive, commands.showingPalette {
+            commands.closePalette()
+            return
+        }
+        if !(window.isVisible && NSApp.isActive) {
+            Task { await state.sync() }
+            showWindow()
+        }
+        commands.openPalette()
+    }
+
+    private func hideWindow() {
         window.orderOut(nil)
         if let previousApp, !previousApp.isTerminated {
             previousApp.activate()
@@ -142,21 +176,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// A local monitor rather than SwiftUI's onKeyPress, which only hears
     /// keys while a view holds focus. Sheets are windows of their own, so
-    /// typing in one never reaches here, and a field in the main window keeps
-    /// its digits.
-    private func watchFavoriteKeys() {
+    /// typing in one never reaches the bare keys, and a field in the main
+    /// window keeps its letters.
+    private func watchWindowKeys() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control])
-            guard modifiers.isEmpty, !event.isARepeat,
-                  let key = event.charactersIgnoringModifiers, key.count == 1 else { return event }
-            let isMain = event.window.map(ObjectIdentifier.init)
-            let handled = MainActor.assumeIsolated {
-                guard let self, isMain == ObjectIdentifier(self.window),
-                      !(self.window.firstResponder is NSText) else { return false }
-                return self.state.startFavorite(forKey: key)
-            }
+            let handled = MainActor.assumeIsolated { self?.handleWindowKey(event) ?? false }
             return handled ? nil : event
         }
+    }
+
+    private static let paletteSteps = [
+        kVK_UpArrow: -1, kVK_DownArrow: 1, kVK_PageUp: -8, kVK_PageDown: 8,
+    ]
+
+    private func handleWindowKey(_ event: NSEvent) -> Bool {
+        guard let eventWindow = event.window else { return false }
+        // Here rather than in SwiftUI, where an empty text field may eat the
+        // press before any key handler hears it.
+        if event.keyCode == UInt16(kVK_Delete),
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+           let back = commands.backStep,
+           (eventWindow.firstResponder as? NSTextView)?.string.isEmpty ?? true {
+            back()
+            return true
+        }
+        let inMain = eventWindow == window
+        if inMain, commands.showingPalette, let move = commands.paletteMove,
+           let step = Self.paletteSteps[Int(event.keyCode)],
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            move(step)
+            return true
+        }
+        if state.paletteHotKey.matches(event), inMain, window.attachedSheet == nil {
+            commands.perform(.palette)
+            return true
+        }
+        // The palette's own field and keys have it while it's up.
+        guard inMain, window.attachedSheet == nil, !commands.showingPalette,
+              let characters = event.charactersIgnoringModifiers, !characters.isEmpty else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control])
+        // The shortcut card sits over the window like a sheet would: Esc or ?
+        // closes it, and the bare keys behind it wait until it has gone.
+        if commands.showingShortcuts, modifiers.isEmpty {
+            if characters == "\u{1B}" || characters == "?" { commands.showingShortcuts = false }
+            return true
+        }
+        guard modifiers.isEmpty || modifiers == .command else { return false }
+        let command = modifiers == .command
+        // While a field is being typed in, its keys are its own; only the ⌘
+        // shortcuts that mean nothing to a field get through.
+        if window.firstResponder is NSText, !command || characters == "\u{7F}" { return false }
+        return commands.handleKey(characters: characters, command: command, isRepeat: event.isARepeat)
     }
 
     /// The status item's window lives on whichever display's menu bar took

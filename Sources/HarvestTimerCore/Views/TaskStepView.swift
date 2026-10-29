@@ -6,6 +6,8 @@ struct TaskStepView: View {
     let assignment: ProjectAssignment
     @Binding var selectedTaskId: Int64?
     let onBack: () -> Void
+    /// Off when a field after the list should have the cursor instead.
+    var takesFocus = true
     @FocusState private var listFocused: Bool
 
     var body: some View {
@@ -45,7 +47,7 @@ struct TaskStepView: View {
                 .focusable()
                 .focusEffectDisabled()
                 .focused($listFocused)
-                .onAppear { listFocused = true }
+                .onAppear { if takesFocus { listFocused = true } }
                 .onMoveCommand { direction in
                     guard let step = step(for: direction) else { return }
                     guard let taskId = ListCursor.moved(from: selectedTaskId, by: step, in: taskIds)

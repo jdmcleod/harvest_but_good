@@ -8,16 +8,17 @@ enum PanelHeader {
 
 struct MainView: View {
     @Environment(AppState.self) private var state
-    @State private var showingSettings = false
+    @Environment(WindowCommands.self) private var commands
 
     var body: some View {
         @Bindable var state = state
+        @Bindable var commands = commands
         VStack(spacing: 0) {
-            WeekHeader(showingSettings: $showingSettings)
+            WeekHeader(showingSettings: $commands.showingSettings)
                 .zIndex(1)
             Divider()
             HSplitView {
-                EntryList(openSettings: { showingSettings = true })
+                EntryList(openSettings: { commands.showingSettings = true })
                     .frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
                 DayTimelineView()
                     .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
@@ -26,9 +27,18 @@ struct MainView: View {
                 ErrorBanner(message: error)
             }
         }
-        .sheet(isPresented: $showingSettings) {
+        .sheet(isPresented: $commands.showingSettings) {
             SettingsView()
         }
+        .overlay {
+            if commands.showingPalette {
+                CommandPalette()
+            } else if commands.showingShortcuts {
+                ShortcutsOverlay()
+            }
+        }
+        .animation(.snappy(duration: 0.15), value: commands.showingShortcuts)
+        .animation(.snappy(duration: 0.15), value: commands.showingPalette)
         .sheet(item: $state.afkPrompt) { prompt in
             AFKPromptView(prompt: prompt)
         }

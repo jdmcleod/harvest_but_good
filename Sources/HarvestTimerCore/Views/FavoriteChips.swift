@@ -4,7 +4,7 @@ struct FavoriteChips: View {
     static let dragSpace = "favoriteChips"
 
     @Environment(AppState.self) private var state
-    @State private var showingAddSheet = false
+    @Environment(WindowCommands.self) private var commands
     @State private var editing: Favorite?
     @State private var dragging: ChipDrag?
 
@@ -16,6 +16,7 @@ struct FavoriteChips: View {
     }
 
     var body: some View {
+        @Bindable var commands = commands
         HStack(spacing: FavoriteOrder.chipSpacing) {
             ForEach(Array(state.favorites.enumerated()), id: \.element.id) { index, favorite in
                 FavoriteChip(
@@ -36,7 +37,7 @@ struct FavoriteChips: View {
                 .zIndex(dragging?.id == favorite.id ? 1 : 0)
             }
             Button {
-                showingAddSheet = true
+                commands.showingAddFavorite = true
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 15))
@@ -47,7 +48,7 @@ struct FavoriteChips: View {
             .help("Add favorite")
         }
         .coordinateSpace(name: Self.dragSpace)
-        .sheet(isPresented: $showingAddSheet) {
+        .sheet(isPresented: $commands.showingAddFavorite) {
             AddFavoriteSheet()
         }
         .sheet(item: $editing) { favorite in
@@ -112,6 +113,7 @@ struct FavoriteChipLabel: View {
 private struct FavoriteChip: View {
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
+    @Environment(WindowCommands.self) private var commands
     let favorite: Favorite
     let index: Int
     let count: Int
@@ -138,7 +140,7 @@ private struct FavoriteChip: View {
     var body: some View {
         Button {
             guard !moved else { return }
-            Task { await state.startFavorite(favorite) }
+            Task { await commands.startFavorite(favorite) }
         } label: {
             FavoriteChipLabel(favorite: favorite, filled: isRunning)
                 .scaleEffect(isLifted ? 1.08 : 1)

@@ -38,15 +38,24 @@ public final class AppState {
             if let data = try? JSONEncoder().encode(hotKey) {
                 defaults.set(data, forKey: Self.hotKeyKey)
             }
-            onHotKeyChange?(hotKey)
+            onHotKeyChange?(.showHide, hotKey)
         }
     }
-    public var onHotKeyChange: ((HotKey) -> Void)?
     /// Puts the app in the Dock and the Cmd-Tab switcher, as a regular app
     /// rather than a menu bar agent.
     public var showsInDock: Bool {
         didSet { defaults.set(showsInDock, forKey: Self.showsInDockKey) }
     }
+    public var openToPaletteHotKey: HotKey {
+        didSet {
+            save(openToPaletteHotKey, forKey: Self.openToPaletteHotKeyKey)
+            onHotKeyChange?(.openToPalette, openToPaletteHotKey)
+        }
+    }
+    public var paletteHotKey: HotKey {
+        didSet { save(paletteHotKey, forKey: Self.paletteHotKeyKey) }
+    }
+    public var onHotKeyChange: ((HotKeySlot, HotKey) -> Void)?
     public var onAFKDetected: (() -> Void)?
 
     private let idleSeconds: () -> TimeInterval
@@ -62,6 +71,8 @@ public final class AppState {
     private static let customColorsKey = "customColors"
     private static let hotKeyKey = "hotKey"
     private static let showsInDockKey = "showsInDock"
+    private static let openToPaletteHotKeyKey = "openToPaletteHotKey"
+    private static let paletteHotKeyKey = "paletteHotKey"
     /// Who the token belongs to and where their account lives, as the first
     /// sync after connecting learns them. Nil until then.
     public private(set) var currentUser: HarvestUser?
@@ -103,6 +114,8 @@ public final class AppState {
         customColors = Self.loadCustomColors(from: defaults)
         hotKey = Self.loadHotKey(from: defaults)
         showsInDock = defaults.bool(forKey: Self.showsInDockKey)
+        openToPaletteHotKey = Self.loadHotKey(.openToPalette, forKey: Self.openToPaletteHotKeyKey, from: defaults)
+        paletteHotKey = Self.loadHotKey(.palette, forKey: Self.paletteHotKeyKey, from: defaults)
         credentials = credentialStore.load()
         if let credentials, BuildInfo.current.version != nil {
             credentialStore.adoptForRelease(credentials, defaults: defaults)
@@ -137,6 +150,10 @@ public final class AppState {
         customColors = Self.loadCustomColors(from: self.defaults)
         hotKey = Self.loadHotKey(from: self.defaults)
         showsInDock = self.defaults.bool(forKey: Self.showsInDockKey)
+        openToPaletteHotKey = Self.loadHotKey(
+            .openToPalette, forKey: Self.openToPaletteHotKeyKey, from: self.defaults
+        )
+        paletteHotKey = Self.loadHotKey(.palette, forKey: Self.paletteHotKeyKey, from: self.defaults)
         favorites = favoritesStore.load()
         breakTitles = breakTitlesStore.load()
         goalSettings = goalsStore.load()
@@ -152,8 +169,16 @@ public final class AppState {
     }
 
     private static func loadHotKey(from defaults: UserDefaults) -> HotKey {
-        defaults.data(forKey: hotKeyKey)
-            .flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? .standard
+        loadHotKey(.standard, forKey: hotKeyKey, from: defaults)
+    }
+
+    private static func loadHotKey(_ fallback: HotKey, forKey key: String, from defaults: UserDefaults) -> HotKey {
+        defaults.data(forKey: key)
+            .flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? fallback
+    }
+
+    private func save(_ key: HotKey, forKey name: String) {
+        if let data = try? JSONEncoder().encode(key) { defaults.set(data, forKey: name) }
     }
 
     public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
@@ -169,6 +194,36 @@ public final class AppState {
     /// midnight, and so a stale `now` never marks two days as today at once.
     public func isToday(_ day: Date) -> Bool {
         Calendar.current.isDate(day, inSameDayAs: now)
+    }
+
+    /// Moves the viewed day, a week at a time when `days` is ±7, and fetches
+    /// it when it falls outside the week already loaded.
+    public func shiftDay(by days: Int) {
+        show(day: Calendar.current.date(byAdding: .day, value: days, to: selectedDay)!)
+    }
+
+    public func show(day: Date) {
+        let leavesWeek = !weekDays.contains { Calendar.current.isDate($0, inSameDayAs: day) }
+        selectedDay = day
+        if leavesWeek { Task { await sync() } }
+    }
+
+    /// Steps the picked entry through the viewed day's list, J/K style.
+    public func selectEntry(by step: Int) {
+        let ids = entries(forDay: selectedDay).map(\.id)
+        selectedEntryId = ListCursor.moved(from: selectedEntryId, by: step, in: ids)
+    }
+
+    /// What a key aimed at "the entry" acts on: the one picked in the list,
+    /// else the one with the clock running.
+    public var targetEntry: TimeEntry? {
+        selectedEntryId.flatMap(entry(withId:)) ?? runningEntry
+    }
+
+    /// Shifts an entry's hours by whole minutes, never below zero.
+    public func adjust(_ entry: TimeEntry, byMinutes minutes: Int) async {
+        let hours = max(0, Hours.toNearestMinute(liveHours(for: entry)) + Double(minutes) / 60)
+        await updateHours(entry, hours: hours)
     }
 
     public func goToToday() {
@@ -477,14 +532,23 @@ public final class AppState {
         }
     }
 
-    private func createEntry(on day: Day, projectId: Int64, taskId: Int64, notes: String?) async {
+    /// Books finished time with no timer, on whichever day it was worked, and
+    /// brings that day into view.
+    public func log(hours: Double, projectId: Int64, taskId: Int64, on date: Date) async {
+        show(day: date)
+        await createEntry(on: Day(date), projectId: projectId, taskId: taskId, notes: nil, hours: hours)
+    }
+
+    private func createEntry(
+        on day: Day, projectId: Int64, taskId: Int64, notes: String?, hours: Double = 0
+    ) async {
         let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         await perform { api in
             let entry = try await api.createEntry(
                 projectId: projectId,
                 taskId: taskId,
                 spentDate: day,
-                hours: 0,
+                hours: hours,
                 notes: notes
             )
             apply(entry)

@@ -53,12 +53,7 @@ struct WeekHeader: View {
     }
 
     private func shiftWeek(by weeks: Int) {
-        state.selectedDay = Calendar.current.date(
-            byAdding: .day,
-            value: weeks * 7,
-            to: state.selectedDay
-        )!
-        Task { await state.sync() }
+        state.shiftDay(by: weeks * 7)
     }
 }
 
