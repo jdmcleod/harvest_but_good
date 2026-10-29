@@ -1,51 +1,12 @@
 import SwiftUI
 
-/// Every key the window answers to, read off the same table the key monitor
-/// and the palette use, so it can't drift from what the keys really do.
-/// A card inside the window rather than a sheet, which would be sized for
-/// itself and outgrow the window it belongs to.
+/// Every shortcut the app has, each one set by clicking it and pressing the
+/// keys. A card inside the window rather than a sheet, which would be sized
+/// for itself and outgrow the window it belongs to.
 struct ShortcutsOverlay: View {
     @Environment(AppState.self) private var state
     @Environment(WindowCommands.self) private var commands
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private struct Row: Identifiable {
-        let title: String
-        let keys: [String]
-        var editable = false
-        var id: String { title }
-    }
-
-    private var groups: [(title: String, rows: [Row])] {
-        let caps = commands.keycaps
-        func rows(_ list: [(WindowCommand, String?)]) -> [Row] {
-            list.compactMap { command, title in
-                caps[command].map { Row(title: title ?? command.title, keys: $0) }
-            }
-        }
-        let allFavoriteKeys = state.favorites.compactMap { state.shortcutKey(for: $0) }
-        let favoriteKeys = allFavoriteKeys.count > 3
-            ? [allFavoriteKeys[0], "…", allFavoriteKeys[allFavoriteKeys.count - 1]]
-            : allFavoriteKeys
-        return [
-            ("Anywhere", [
-                Row(title: "Show or hide the window", keys: state.hotKey.displayParts, editable: true),
-                Row(title: "Open with the command palette", keys: state.openToPaletteHotKey.displayParts, editable: true),
-            ]),
-            ("Timers", [Row(title: "Command palette", keys: state.paletteHotKey.displayParts, editable: true)]
-                + rows([(.startTimer, nil), (.toggleTimer, nil), (.notes, "Write a note on the timer"),
-                        (.addFifteen, nil), (.takeFifteen, nil)])
-                + (favoriteKeys.isEmpty ? [] : [Row(title: "Start a favorite", keys: favoriteKeys, editable: true)])),
-            ("Moving around", rows([(.nextEntry, "Next entry (or ↓)"), (.previousEntry, "Previous entry (or ↑)"),
-                                     (.previousDay, "Previous day (or ←)"), (.nextDay, "Next day (or →)"),
-                                     (.previousWeek, nil), (.nextWeek, nil), (.today, nil),
-                                     (.settings, "Settings"), (.shortcuts, "This sheet")])),
-            ("Picked or running entry", rows([(.toggleSelected, "Start or stop it"), (.editHours, nil),
-                                               (.changeProjectTask, "Change project or task"), (.moveTime, "Move time"),
-                                               (.trim, nil), (.deleteEntry, "Delete"),
-                                               (.clearSelection, "Let go of the picked entry")])),
-        ]
-    }
 
     var body: some View {
         ZStack {
@@ -64,23 +25,26 @@ struct ShortcutsOverlay: View {
                 Text("Keyboard Shortcuts")
                     .font(.headline)
                 Spacer()
-                Button("Change…") {
-                    close()
-                    commands.showingSettings = true
-                }
-                .controlSize(.small)
+                Button("Clear All", action: state.clearBindings)
+                    .controlSize(.small)
+                    .disabled(state.keyBindings == WindowCommand.defaults)
+                    .help("Removes every shortcut but ? and ⌘,, so you can still get back here.")
+                Button("Use Suggested", action: state.useSuggestedBindings)
+                    .controlSize(.small)
+                    .disabled(!hasSuggestionsLeft)
+                    .help("Fills in a shortcut for each one that has none. Yours stay as they are.")
                 Button(action: close) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Close (esc or ?)")
+                .help("Close (esc)")
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
             .padding(.bottom, 4)
-            Text("Bare keys work whenever you aren't typing in a field.")
+            Text("Click a shortcut and press the keys. Bare keys work whenever you aren't typing in a field.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 16)
@@ -88,7 +52,25 @@ struct ShortcutsOverlay: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(groups, id: \.title) { group($0) }
+                    section("Anywhere") {
+                        row("Show or hide the window") {
+                            ShowHideRecorder()
+                        }
+                    }
+                    ForEach(WindowCommand.Group.allCases, id: \.self) { group in
+                        section(group.rawValue) {
+                            ForEach(WindowCommand.allCases.filter { $0.group == group }, id: \.self) { command in
+                                row(command.title) { recorder(for: command) }
+                            }
+                            if group == .timer, !favoriteKeys.isEmpty {
+                                row("Start a favorite") {
+                                    HStack(spacing: 3) { ForEach(favoriteKeys, id: \.self) { Keycap($0) } }
+                                        .padding(.horizontal, 4)
+                                        .help("Set under Edit Favorite")
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding(16)
             }
@@ -105,33 +87,57 @@ struct ShortcutsOverlay: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    private var favoriteKeys: [String] {
+        let keys = state.favorites.compactMap { state.shortcutKey(for: $0) }
+        return keys.count > 3 ? [keys[0], "…", keys[keys.count - 1]] : keys
+    }
+
+    private var hasSuggestionsLeft: Bool {
+        WindowCommand.allCases.contains { command in
+            let suggested = command.suggested
+            guard state.keyBindings[command] == nil, state.isFree(suggested) else { return false }
+            return !state.keyBindings.values.contains(where: suggested.matches)
+        }
+    }
+
+    private func recorder(for command: WindowCommand) -> some View {
+        ShortcutRecorder(key: state.keyBindings[command]) {
+            pick($0, for: command)
+        } clear: {
+            state.setBinding(nil, for: command)
+        }
+    }
+
+    private func pick(_ key: HotKey, for command: WindowCommand) -> String? {
+        if WindowCommand.isReserved(key) { return "\(key.display) is kept for the app" }
+        if state.hotKey.matches(key) { return "\(key.display) shows or hides the window" }
+        if key.isBare, let favorite = FavoriteShortcuts.favorite(forKey: key.key, in: state.favorites) {
+            return "\(key.display) starts \(favorite.taskName)"
+        }
+        state.setBinding(key, for: command)
+        return nil
+    }
+
     private func close() {
         commands.showingShortcuts = false
     }
 
-    private func group(_ group: (title: String, rows: [Row])) -> some View {
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(group.title.uppercased())
+            Text(title.uppercased())
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(0.5)
                 .foregroundStyle(.secondary)
-            ForEach(group.rows) { row in
-                HStack(spacing: 8) {
-                    Text(row.title)
-                        .font(.callout)
-                    Spacer(minLength: 8)
-                    if row.editable {
-                        Text("EDITABLE")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Color.primary.opacity(0.15)))
-                    }
-                    HStack(spacing: 3) {
-                        ForEach(Array(row.keys.enumerated()), id: \.offset) { _, key in Keycap(key) }
-                    }
-                }
-            }
+            content()
+        }
+    }
+
+    private func row<Recorder: View>(_ title: String, @ViewBuilder recorder: () -> Recorder) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.callout)
+            Spacer(minLength: 8)
+            recorder()
         }
     }
 }

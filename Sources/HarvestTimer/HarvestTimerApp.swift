@@ -28,7 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         state.start()
         followDockSetting()
         commands = WindowCommands(state: state)
-        commands.onHideWindow = { [weak self] in self?.hideWindow() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -64,15 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         state.onAFKDetected = { [weak self] in self?.showWindow() }
 
-        HotKeyCenter.shared.onPress = { [weak self] slot in
-            switch slot {
-            case .showHide: self?.toggleFromShortcut()
-            case .openToPalette: self?.openToPalette()
-            }
-        }
-        HotKeyCenter.shared.register(state.hotKey, for: .showHide)
-        HotKeyCenter.shared.register(state.openToPaletteHotKey, for: .openToPalette)
-        state.onHotKeyChange = { slot, key in HotKeyCenter.shared.register(key, for: slot) }
+        HotKeyCenter.shared.onPress = { [weak self] in self?.toggleFromShortcut() }
+        HotKeyCenter.shared.register(state.hotKey)
+        state.onHotKeyChange = { HotKeyCenter.shared.register($0) }
         watchWindowKeys()
         showWindow()
     }
@@ -147,24 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showWindow()
             return
         }
-        hideWindow()
-    }
-
-    /// Up with the palette open from any app; pressed again while the palette
-    /// is what you're looking at, it closes the palette.
-    private func openToPalette() {
-        if window.isVisible, NSApp.isActive, commands.showingPalette {
-            commands.closePalette()
-            return
-        }
-        if !(window.isVisible && NSApp.isActive) {
-            Task { await state.sync() }
-            showWindow()
-        }
-        commands.openPalette()
-    }
-
-    private func hideWindow() {
         window.orderOut(nil)
         if let previousApp, !previousApp.isTerminated {
             previousApp.activate()
@@ -185,12 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    private static let paletteSteps = [
-        kVK_UpArrow: -1, kVK_DownArrow: 1, kVK_PageUp: -8, kVK_PageDown: 8,
-    ]
-
     private func handleWindowKey(_ event: NSEvent) -> Bool {
-        guard let eventWindow = event.window else { return false }
+        guard let eventWindow = event.window, !commands.isRecordingShortcut else { return false }
         // Here rather than in SwiftUI, where an empty text field may eat the
         // press before any key handler hears it.
         if event.keyCode == UInt16(kVK_Delete),
@@ -200,34 +171,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             back()
             return true
         }
-        let inMain = eventWindow == window
-        if inMain, commands.showingPalette, let move = commands.paletteMove,
-           let step = Self.paletteSteps[Int(event.keyCode)],
-           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
-            move(step)
-            return true
+        guard eventWindow == window, window.attachedSheet == nil,
+              let characters = event.charactersIgnoringModifiers, !characters.isEmpty,
+              let press = HotKey(event: event, allowingBareKey: true) else { return false }
+        // The shortcut card sits over the window like a sheet would: Esc or
+        // its own shortcut closes it, and the bare keys behind it wait.
+        if commands.showingShortcuts {
+            if event.keyCode == UInt16(kVK_Escape) || state.command(for: press) == .shortcuts {
+                commands.showingShortcuts = false
+                return true
+            }
+            return press.isBare
         }
-        if state.paletteHotKey.matches(event), inMain, window.attachedSheet == nil {
-            commands.perform(.palette)
-            return true
-        }
-        // The palette's own field and keys have it while it's up.
-        guard inMain, window.attachedSheet == nil, !commands.showingPalette,
-              let characters = event.charactersIgnoringModifiers, !characters.isEmpty else { return false }
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control])
-        // The shortcut card sits over the window like a sheet would: Esc or ?
-        // closes it, and the bare keys behind it wait until it has gone.
-        if commands.showingShortcuts, modifiers.isEmpty {
-            if characters == "\u{1B}" || characters == "?" { commands.showingShortcuts = false }
-            return true
-        }
-        guard modifiers.isEmpty || modifiers == .command else { return false }
-        let command = modifiers == .command
         // While a field is being typed in, its keys are its own; only the ⌘
         // shortcuts that mean nothing to a field get through.
-        if window.firstResponder is NSText, !command || characters == "\u{7F}" { return false }
-        return commands.handleKey(characters: characters, command: command, isRepeat: event.isARepeat)
+        if window.firstResponder is NSText,
+           !event.modifierFlags.contains(.command) || Self.editingKeys.contains(Int(event.keyCode)) {
+            return false
+        }
+        return commands.handleKey(press, characters: characters, isRepeat: event.isARepeat)
     }
+
+    private static let editingKeys: Set = [
+        kVK_Delete, kVK_ForwardDelete, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
+    ]
 
     /// The status item's window lives on whichever display's menu bar took
     /// the click, so its screen is the one the user is looking at.
@@ -246,6 +213,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // Nothing focused, so the first press is a shortcut rather than typing
+        // into whichever notes box AppKit or SwiftUI would pick. Again on the
+        // next turn, since SwiftUI hands out its initial focus late.
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.async { [weak self] in self?.window.makeFirstResponder(nil) }
     }
 
     private static func buildMainMenu() -> NSMenu {

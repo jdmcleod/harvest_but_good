@@ -31,14 +31,11 @@ struct MainView: View {
             SettingsView()
         }
         .overlay {
-            if commands.showingPalette {
-                CommandPalette()
-            } else if commands.showingShortcuts {
+            if commands.showingShortcuts {
                 ShortcutsOverlay()
             }
         }
         .animation(.snappy(duration: 0.15), value: commands.showingShortcuts)
-        .animation(.snappy(duration: 0.15), value: commands.showingPalette)
         .sheet(item: $state.afkPrompt) { prompt in
             AFKPromptView(prompt: prompt)
         }

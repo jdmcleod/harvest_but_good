@@ -1,10 +1,9 @@
+import Carbon.HIToolbox
 import Foundation
 
-/// Everything the window can be told to do from the keyboard or the command
-/// palette. Each command has one bare-key or ⌘ binding at most, so the palette,
-/// the shortcut sheet and the key monitor all read the same table.
+/// Everything the window can be told to do from the keyboard. Each one has a
+/// shortcut only if someone gave it one, or took the suggestions.
 public enum WindowCommand: String, CaseIterable, Sendable {
-    case palette
     case startTimer
     case toggleTimer
     case notes
@@ -13,7 +12,6 @@ public enum WindowCommand: String, CaseIterable, Sendable {
     case nextEntry
     case previousEntry
     case toggleSelected
-    case clearSelection
     case editHours
     case changeProjectTask
     case moveTime
@@ -28,22 +26,16 @@ public enum WindowCommand: String, CaseIterable, Sendable {
     case addFavorite
     case settings
     case shortcuts
-    case hideWindow
-    case useCustomColors
-    case changeShowHideShortcut
-    case changePaletteShortcut
-    case changeOpenToPaletteShortcut
 
     public enum Group: String, CaseIterable, Sendable {
         case timer = "Timer"
-        case entry = "Entry"
-        case goTo = "Go to"
+        case entry = "Picked or running entry"
+        case goTo = "Moving around"
         case app = "App"
     }
 
     public var title: String {
         switch self {
-        case .palette: "Command palette"
         case .startTimer: "Start a timer…"
         case .toggleTimer: "Stop or resume the timer"
         case .notes: "Write a note"
@@ -52,54 +44,20 @@ public enum WindowCommand: String, CaseIterable, Sendable {
         case .nextEntry: "Next entry"
         case .previousEntry: "Previous entry"
         case .toggleSelected: "Start or stop the picked entry"
-        case .clearSelection: "Clear the picked entry"
         case .editHours: "Edit duration"
-        case .changeProjectTask: "Change project or task…"
-        case .moveTime: "Move time…"
+        case .changeProjectTask: "Change project or task"
+        case .moveTime: "Move time"
         case .trim: "Trim 15 minutes from the end"
-        case .deleteEntry: "Delete entry…"
+        case .deleteEntry: "Delete"
         case .previousDay: "Previous day"
         case .nextDay: "Next day"
         case .previousWeek: "Previous week"
         case .nextWeek: "Next week"
         case .today: "Go to today"
-        case .sync: "Sync with Harvest now"
-        case .addFavorite: "Add a favorite…"
-        case .settings: "Settings…"
+        case .sync: "Sync with Harvest"
+        case .addFavorite: "Add a favorite"
+        case .settings: "Settings"
         case .shortcuts: "Keyboard shortcuts"
-        case .hideWindow: "Hide window"
-        case .useCustomColors: "Use custom colors"
-        case .changeShowHideShortcut: "Change show/hide shortcut…"
-        case .changePaletteShortcut: "Change command palette shortcut…"
-        case .changeOpenToPaletteShortcut: "Change open-to-palette shortcut…"
-        }
-    }
-
-    /// Extra words the palette's search should find a command by.
-    var keywords: String {
-        switch self {
-        case .startTimer: "new add entry begin"
-        case .toggleTimer: "pause stop resume continue restart space"
-        case .notes: "notes describe comment"
-        case .addFifteen: "more extend plus forgot"
-        case .takeFifteen: "less minus reduce"
-        case .editHours: "hours time duration change"
-        case .changeProjectTask: "edit entry switch wrong"
-        case .moveTime: "transfer wrong task split"
-        case .trim: "remove break cut"
-        case .deleteEntry: "remove trash"
-        case .previousDay: "back yesterday"
-        case .nextDay: "forward tomorrow"
-        case .today: "day jump now"
-        case .sync: "refresh reload"
-        case .addFavorite: "favourite pin chip star"
-        case .settings: "preferences goals options"
-        case .shortcuts: "help keys cheat sheet hotkeys"
-        case .hideWindow: "close dismiss show toggle"
-        case .useCustomColors: "theme colours appearance palette harvest"
-        case .changeShowHideShortcut, .changePaletteShortcut, .changeOpenToPaletteShortcut:
-            "hotkey keybind keyboard customize shortcut"
-        default: ""
         }
     }
 
@@ -107,114 +65,77 @@ public enum WindowCommand: String, CaseIterable, Sendable {
         switch self {
         case .startTimer, .toggleTimer, .notes, .addFifteen, .takeFifteen: .timer
         case .editHours, .changeProjectTask, .moveTime, .trim, .deleteEntry,
-             .toggleSelected, .clearSelection, .nextEntry, .previousEntry: .entry
+             .toggleSelected, .nextEntry, .previousEntry: .entry
         case .previousDay, .nextDay, .previousWeek, .nextWeek, .today: .goTo
-        default: .app
+        case .sync, .addFavorite, .settings, .shortcuts: .app
         }
     }
 
-    public var systemImage: String {
+    /// Held down, these keep going.
+    var repeats: Bool {
+        [.nextEntry, .previousEntry, .previousDay, .nextDay].contains(self)
+    }
+
+    /// What a fresh install has: a way into Settings and into the list of
+    /// keys, and nothing that could catch someone out.
+    public static let defaults: [WindowCommand: HotKey] = [
+        .settings: .window(kVK_ANSI_Comma, ",", command: true),
+        .shortcuts: .window(kVK_ANSI_Slash, "?", shift: true),
+    ]
+
+    /// What "Use suggested" fills in: one plain key each where there is a
+    /// letter to remember it by. No digits, which favorites start with.
+    public var suggested: HotKey {
         switch self {
-        case .palette: "command"
-        case .startTimer: "play.circle"
-        case .toggleTimer: "playpause"
-        case .notes: "note.text"
-        case .addFifteen: "plus"
-        case .takeFifteen: "minus"
-        case .nextEntry: "arrow.down"
-        case .previousEntry: "arrow.up"
-        case .toggleSelected: "playpause"
-        case .clearSelection: "xmark"
-        case .editHours: "clock"
-        case .changeProjectTask: "pencil"
-        case .moveTime: "arrow.left.arrow.right"
-        case .trim: "scissors"
-        case .deleteEntry: "trash"
-        case .previousDay: "chevron.left"
-        case .nextDay: "chevron.right"
-        case .previousWeek: "chevron.left.2"
-        case .nextWeek: "chevron.right.2"
-        case .today: "calendar"
-        case .sync: "arrow.clockwise"
-        case .addFavorite: "star"
-        case .settings: "gearshape"
-        case .shortcuts: "keyboard"
-        case .hideWindow: "macwindow"
-        case .useCustomColors: "paintpalette"
-        case .changeShowHideShortcut, .changePaletteShortcut, .changeOpenToPaletteShortcut:
-            "record.circle"
+        case .startTimer: .window(kVK_ANSI_N, "N", command: true)
+        case .toggleTimer: .window(kVK_Space, "Space")
+        case .notes: .window(kVK_ANSI_N, "N")
+        case .addFifteen: .window(kVK_ANSI_Equal, "+", shift: true)
+        case .takeFifteen: .window(kVK_ANSI_Minus, "-")
+        case .nextEntry: .window(kVK_DownArrow, "↓")
+        case .previousEntry: .window(kVK_UpArrow, "↑")
+        case .toggleSelected: .window(kVK_Return, "↩")
+        case .editHours: .window(kVK_ANSI_E, "E")
+        case .changeProjectTask: .window(kVK_ANSI_P, "P")
+        case .moveTime: .window(kVK_ANSI_M, "M")
+        case .trim: .window(kVK_ANSI_X, "X")
+        case .deleteEntry: .window(kVK_Delete, "⌫", command: true)
+        case .previousDay: .window(kVK_LeftArrow, "←")
+        case .nextDay: .window(kVK_RightArrow, "→")
+        case .previousWeek: .window(kVK_LeftArrow, "←", shift: true)
+        case .nextWeek: .window(kVK_RightArrow, "→", shift: true)
+        case .today: .window(kVK_ANSI_T, "T")
+        case .sync: .window(kVK_ANSI_R, "R", command: true)
+        case .addFavorite: .window(kVK_ANSI_D, "D", command: true)
+        case .settings, .shortcuts: Self.defaults[self]!
         }
     }
 
-    /// The press that runs it while the window is in front and no field is
-    /// being typed in. Shortcuts the user picks live in `AppState` instead.
-    public var binding: KeyBinding? {
-        switch self {
-        case .startTimer: KeyBinding("n", command: true)
-        case .toggleTimer: KeyBinding(" ", label: "Space")
-        case .notes: KeyBinding("n")
-        case .addFifteen: KeyBinding("+", alternates: ["="])
-        case .takeFifteen: KeyBinding("-", label: "−")
-        case .nextEntry: KeyBinding("j", alternates: [KeyBinding.downArrow], label: "J")
-        case .previousEntry: KeyBinding("k", alternates: [KeyBinding.upArrow], label: "K")
-        case .toggleSelected: KeyBinding("\r", label: "↩")
-        case .clearSelection: KeyBinding(KeyBinding.escape, label: "esc")
-        case .editHours: KeyBinding("e")
-        case .changeProjectTask: KeyBinding("p")
-        case .moveTime: KeyBinding("m")
-        case .deleteEntry: KeyBinding(KeyBinding.delete, command: true, label: "⌫")
-        case .previousDay: KeyBinding("[", alternates: [KeyBinding.leftArrow])
-        case .nextDay: KeyBinding("]", alternates: [KeyBinding.rightArrow])
-        case .previousWeek: KeyBinding("{", label: "⇧[")
-        case .nextWeek: KeyBinding("}", label: "⇧]")
-        case .today: KeyBinding("t")
-        case .sync: KeyBinding("r", command: true)
-        case .addFavorite: KeyBinding("d", command: true)
-        case .settings: KeyBinding(",", command: true)
-        case .shortcuts: KeyBinding("?")
-        default: nil
-        }
-    }
-
-    /// Whether the command needs the entry `AppState.targetEntry` names.
-    public var needsEntry: Bool {
-        group == .entry && ![.nextEntry, .previousEntry, .clearSelection].contains(self)
-    }
-
-    /// The command a press stands for, if any. `characters` is the event's
-    /// `charactersIgnoringModifiers`, which still carries Shift.
-    public static func matching(characters: String, command: Bool) -> WindowCommand? {
-        allCases.first { $0.binding?.matches(characters: characters, command: command) == true }
+    /// Presses a shortcut can't take: the app's menu keys and the ones every
+    /// window answers to.
+    static func isReserved(_ key: HotKey) -> Bool {
+        let command = UInt32(cmdKey)
+        let reserved: [(Int, UInt32)] = [
+            (kVK_Escape, 0), (kVK_Tab, 0), (kVK_Tab, UInt32(shiftKey)),
+            (kVK_ANSI_Q, command), (kVK_ANSI_W, command), (kVK_ANSI_H, command),
+            (kVK_ANSI_Z, command), (kVK_ANSI_Z, command | UInt32(shiftKey)),
+            (kVK_ANSI_X, command), (kVK_ANSI_C, command), (kVK_ANSI_V, command), (kVK_ANSI_A, command),
+        ]
+        return reserved.contains { $0.0 == Int(key.keyCode) && $0.1 == key.modifiers }
     }
 }
 
-public struct KeyBinding: Equatable, Sendable {
-    static let upArrow = "\u{F700}"
-    static let downArrow = "\u{F701}"
-    static let leftArrow = "\u{F702}"
-    static let rightArrow = "\u{F703}"
-    static let escape = "\u{1B}"
-    static let delete = "\u{7F}"
-
-    public let character: String
-    public let alternates: [String]
-    public let command: Bool
-    private let label: String?
-
-    init(_ character: String, alternates: [String] = [], command: Bool = false, label: String? = nil) {
-        self.character = character
-        self.alternates = alternates
-        self.command = command
-        self.label = label
+extension HotKey {
+    static func window(_ keyCode: Int, _ key: String, command: Bool = false, shift: Bool = false) -> HotKey {
+        HotKey(
+            keyCode: UInt32(keyCode),
+            modifiers: (command ? UInt32(cmdKey) : 0) | (shift ? UInt32(shiftKey) : 0),
+            key: key
+        )
     }
 
-    /// Keycaps as the palette and the shortcut sheet draw them.
-    public var keycaps: [String] {
-        (command ? ["⌘"] : []) + [label ?? character.uppercased()]
-    }
-
-    func matches(characters: String, command: Bool) -> Bool {
-        command == self.command
-            && ([character] + alternates).contains { $0.caseInsensitiveCompare(characters) == .orderedSame }
+    /// No ⌘, ⌥ or ⌃: a press that would otherwise type.
+    public var isBare: Bool {
+        modifiers & UInt32(cmdKey | optionKey | controlKey) == 0
     }
 }
