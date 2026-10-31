@@ -205,7 +205,7 @@ public final class AppState {
     }
 
     private var weekEntries: [TimeEntry] {
-        weekDays.flatMap { entries(forDay: $0) }
+        weekCalendar.countedDays(containing: selectedDay).flatMap { entries(forDay: $0) }
     }
 
     public var menuBarTitle: String {
@@ -352,7 +352,7 @@ public final class AppState {
     }
 
     public func sync() async {
-        var days = Set(weekDays.map(Day.init))
+        var days = Set(weekCalendar.countedDays(containing: selectedDay).map(Day.init))
         days.formUnion(weekCalendar.week(containing: .now).map(Day.init))
         // A running timer is booked on the day it started, which on a Monday
         // is outside the week. Missing it means no away prompt and no handover

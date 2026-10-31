@@ -24,6 +24,13 @@ public struct WeekCalendar {
         return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
     }
 
+    /// The days whose hours count toward the week `date` falls in: the
+    /// weekdays plus the Sunday before them and the Saturday after.
+    public func countedDays(containing date: Date) -> [Date] {
+        let monday = weekStart(containing: date)
+        return (-1..<6).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
+    }
+
     /// Every day from `from` to `to`, both ends included.
     public func days(from: Day, to: Day) -> [Day] {
         guard let start = from.date, let end = to.date else { return [] }

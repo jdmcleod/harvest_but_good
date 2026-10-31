@@ -181,6 +181,22 @@ func runAppStateTests() async {
         }
     }
 
+    await test("weekly totals count the Sunday before and the Saturday after") {
+        try await withTemporaryDirectory { directory in
+            let wednesday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(name: "2025-08-02")!, hours: 8, project: 10, task: 100),
+                entry(id: 2, day: Day(name: "2025-08-03")!, hours: 1, project: 10, task: 100, billable: true),
+                entry(id: 3, day: Day(name: "2025-08-06")!, hours: 2, project: 10, task: 100),
+                entry(id: 4, day: Day(name: "2025-08-09")!, hours: 0.5, project: 10, task: 100, billable: true),
+                entry(id: 5, day: Day(name: "2025-08-10")!, hours: 8, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory, selecting: wednesday)
+            expect(state.weekTotal == 3.5, "expected 3.5 hours, got \(state.weekTotal)")
+            expect(state.weekBillableTotal == 1.5, "expected 1.5 billable hours, got \(state.weekBillableTotal)")
+        }
+    }
+
     await test("selecting a different day clears the selected entry") {
         try await withTemporaryDirectory { directory in
             let state = AppState(client: FakeHarvest(), storageDirectory: directory)

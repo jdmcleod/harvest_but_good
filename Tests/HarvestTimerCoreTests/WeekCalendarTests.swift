@@ -34,6 +34,14 @@ func runWeekCalendarTests() {
         expect(weekNames(date(2025, 8, 10)) == firstWeek, "Sunday should look back")
     }
 
+    test("the counted days run from the Sunday before to the Saturday after") {
+        let expected = ["2025-08-03"] + firstWeek + ["2025-08-09"]
+        for day in 4...10 {
+            let names = week.countedDays(containing: date(2025, 8, day)).map { Day($0).name }
+            expect(names == expected, "day \(day) gave \(names)")
+        }
+    }
+
     test("the week starts at midnight, not the time of day") {
         let afternoon = calendar.date(
             from: DateComponents(year: 2025, month: 8, day: 6, hour: 16, minute: 30)
