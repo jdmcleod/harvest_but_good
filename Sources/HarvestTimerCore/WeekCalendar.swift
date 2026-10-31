@@ -1,6 +1,7 @@
 import Foundation
 
-/// The working week the app shows: Monday to Friday, whichever day you are on.
+/// The week the app shows: Sunday to Saturday, with the weekdays always on
+/// screen and the weekend only when it has something to show.
 public struct WeekCalendar {
     private let calendar: Calendar
 
@@ -8,11 +9,12 @@ public struct WeekCalendar {
         self.calendar = calendar
     }
 
-    /// The Monday of the week `date` falls in. A Saturday or Sunday belongs to
-    /// the week that just finished, so both look back to it.
+    /// The Monday of the week `date` falls in. A Saturday closes the week
+    /// before it and a Sunday opens the week after, so each lands in the week
+    /// whose total counts its hours.
     public func weekStart(containing date: Date) -> Date {
         let weekday = calendar.component(.weekday, from: date)
-        let daysFromMonday = (weekday + 5) % 7
+        let daysFromMonday = weekday == 1 ? -1 : weekday - 2
         return calendar.startOfDay(
             for: calendar.date(byAdding: .day, value: -daysFromMonday, to: date)!
         )
@@ -22,6 +24,11 @@ public struct WeekCalendar {
     public func week(containing date: Date) -> [Date] {
         let monday = weekStart(containing: date)
         return (0..<5).map { calendar.date(byAdding: .day, value: $0, to: monday)! }
+    }
+
+    /// Whether `date` is a Saturday or Sunday.
+    public func isWeekend(_ date: Date) -> Bool {
+        [1, 7].contains(calendar.component(.weekday, from: date))
     }
 
     /// The days whose hours count toward the week `date` falls in: the

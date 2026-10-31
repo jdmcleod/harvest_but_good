@@ -156,7 +156,17 @@ public final class AppState {
             .flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? .standard
     }
 
-    public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
+    /// The days the header shows. A weekend day only takes up room when it
+    /// has hours, is today, or is the one selected, so a week worked Monday
+    /// to Friday looks no different.
+    public var weekDays: [Date] {
+        weekCalendar.countedDays(containing: selectedDay).filter { day in
+            !weekCalendar.isWeekend(day)
+                || isToday(day)
+                || Calendar.current.isDate(day, inSameDayAs: selectedDay)
+                || !entries(forDay: day).isEmpty
+        }
+    }
 
     /// Whether the day on screen is the one today falls in, so a control can
     /// offer a way back only when there is somewhere to come back from. A day
