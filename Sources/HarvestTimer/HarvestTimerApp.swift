@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var state: AppState!
-    private var statusItem: NSStatusItem!
+    private var statusItem: StatusItemController!
     private var window: NSWindow!
     private var hasRestoredFrame = false
     /// The app that was in front when the window opened, so hiding it with
@@ -26,22 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         state.start()
         followDockSetting()
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
-        let hosting = NSHostingView(
-            rootView: StatusWidget(openWindow: { [weak self] in self?.toggleWindow() })
-                .environment(state)
-        )
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        if let button = statusItem.button {
-            button.addSubview(hosting)
-            NSLayoutConstraint.activate([
-                hosting.topAnchor.constraint(equalTo: button.topAnchor),
-                hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor),
-                hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor),
-                hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-            ])
-        }
+        statusItem = StatusItemController(state: state) { [weak self] in self?.toggleWindow() }
 
         let rootHosting = NSHostingController(rootView: RootView().environment(state))
         window = NSWindow(contentViewController: rootHosting)
@@ -162,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The status item's window lives on whichever display's menu bar took
     /// the click, so its screen is the one the user is looking at.
     private var isOnClickedScreen: Bool {
-        guard let clicked = statusItem.button?.window?.screen else { return true }
+        guard let clicked = statusItem.buttonWindow?.screen else { return true }
         return window.screen == clicked
     }
 
@@ -227,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func positionUnderStatusItem() {
-        guard let buttonWindow = statusItem.button?.window else {
+        guard let buttonWindow = statusItem.buttonWindow else {
             window.center()
             return
         }
@@ -248,9 +233,8 @@ private extension NSMenu {
     }
 }
 
-private struct StatusWidget: View {
+struct StatusWidget: View {
     @Environment(AppState.self) private var state
-    let openWindow: () -> Void
 
     private var isRunning: Bool { state.runningEntry != nil }
 
@@ -278,7 +262,6 @@ private struct StatusWidget: View {
                     .foregroundStyle(Color.primary)
             }
             .padding(1)
-            .help(goalHelp(progress))
         } else {
             Group {
                 if isRunning {
@@ -302,42 +285,19 @@ private struct StatusWidget: View {
     /// a fixed white would vanish on a light one.
     private var accent: Color { isRunning ? state.palette.accent : .primary }
 
-    private func goalHelp(_ progress: GoalProgress) -> String {
-        if progress.isMet {
-            return "Pace of \(Hours.formatted(progress.goalHours)) met"
-        }
-        return "\(Hours.formatted(progress.remainingHours)) left of \(Hours.formatted(progress.goalHours))"
-    }
-
     var body: some View {
-        // Each button pads itself so the whole strip is clickable, not just
-        // the glyph and the digits.
         HStack(spacing: 0) {
-            Button {
-                Task { await state.toggleCurrentTimer() }
-            } label: {
-                glyph
-                .frame(width: 16, height: 16)
-                .padding(.leading, 8)
-                .padding(.trailing, 3)
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(isRunning ? "Stop timer" : "Resume most recent timer")
+            glyph
+                .frame(width: StatusItemRegion.glyphSize, height: StatusItemRegion.glyphSize)
+                .padding(.leading, StatusItemRegion.glyphLeading)
+                .padding(.trailing, StatusItemRegion.glyphTrailing)
 
-            Button(action: openWindow) {
-                Text(state.menuBarTitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(isRunning ? Color.white : Color.primary)
-                    .padding(.leading, 3)
-                    .padding(.trailing, 8)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Open HarvestButGood")
+            Text(state.menuBarTitle)
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(isRunning ? Color.white : Color.primary)
+                .padding(.leading, 3)
+                .padding(.trailing, 8)
         }
         .frame(maxHeight: .infinity)
         .fixedSize(horizontal: true, vertical: false)
