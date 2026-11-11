@@ -218,7 +218,17 @@ public final class AppState {
         keyBindings.first { $0.value.matches(press) }?.key
     }
 
-    public var weekDays: [Date] { weekCalendar.week(containing: selectedDay) }
+    /// The days the header shows. A weekend day only takes up room when it
+    /// has hours, is today, or is the one selected, so a week worked Monday
+    /// to Friday looks no different.
+    public var weekDays: [Date] {
+        weekCalendar.countedDays(containing: selectedDay).filter { day in
+            !weekCalendar.isWeekend(day)
+                || isToday(day)
+                || Calendar.current.isDate(day, inSameDayAs: selectedDay)
+                || !entries(forDay: day).isEmpty
+        }
+    }
 
     /// Whether the day on screen is the one today falls in, so a control can
     /// offer a way back only when there is somewhere to come back from. A day
@@ -297,7 +307,7 @@ public final class AppState {
     }
 
     private var weekEntries: [TimeEntry] {
-        weekDays.flatMap { entries(forDay: $0) }
+        weekCalendar.countedDays(containing: selectedDay).flatMap { entries(forDay: $0) }
     }
 
     public var menuBarTitle: String {
@@ -444,7 +454,7 @@ public final class AppState {
     }
 
     public func sync() async {
-        var days = Set(weekDays.map(Day.init))
+        var days = Set(weekCalendar.countedDays(containing: selectedDay).map(Day.init))
         days.formUnion(weekCalendar.week(containing: .now).map(Day.init))
         // A running timer is booked on the day it started, which on a Monday
         // is outside the week. Missing it means no away prompt and no handover

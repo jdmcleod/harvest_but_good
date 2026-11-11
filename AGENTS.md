@@ -3,6 +3,12 @@
 - Do not create todo or plan files (e.g. `tasks/todo.md`). Track work in the conversation instead.
 - Run tests with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test`. The
   `swift` on `PATH` is Command Line Tools, which has no `Testing` module.
+- Pushing to `main` does not ship. An installed release build (one with
+  `ReleaseVersion` in its plist) updates only from GitHub releases, which only a
+  `v*` tag makes. Before telling the user a change is live, check what is installed:
+  `plutil -p /Applications/HarvestButGood.app/Contents/Info.plist | grep -E 'ReleaseVersion|GitCommit'`.
+  If it is a release build, tell the user the change needs a release, and ask
+  whether to tag one (next patch after `gh release list -L 1`).
 
 ## Commands
 

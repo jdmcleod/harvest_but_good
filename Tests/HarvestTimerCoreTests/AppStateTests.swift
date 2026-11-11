@@ -86,6 +86,36 @@ func runAppStateTests() async {
         }
     }
 
+    await test("the header shows a weekend day only when it has hours or is selected") {
+        try await withTemporaryDirectory { directory in
+            let wednesday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(name: "2025-08-09")!, hours: 1, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory, selecting: wednesday)
+            var days = state.weekDays.map { Day($0).name }
+            expect(
+                days == ["2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08", "2025-08-09"],
+                "a Saturday with hours should follow Friday, got \(days)"
+            )
+
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 3))!
+            days = state.weekDays.map { Day($0).name }
+            expect(days.first == "2025-08-03", "a selected Sunday should lead the week, got \(days)")
+        }
+    }
+
+    await test("the header shows today when today is a weekend day") {
+        try await withTemporaryDirectory { directory in
+            let saturday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 9, hour: 10))!
+            let state = AppState(client: FakeHarvest(), storageDirectory: directory)
+            state.now = saturday
+            state.selectedDay = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
+            let days = state.weekDays.map { Day($0).name }
+            expect(days.last == "2025-08-09", "today's Saturday should show, got \(days)")
+        }
+    }
+
     await test("custom colors come back on the next launch") {
         try await withTemporaryDirectory { directory in
             let suite = "HarvestTimerTests.\(UUID().uuidString)"
@@ -178,6 +208,22 @@ func runAppStateTests() async {
             let state = await syncedState(fake, directory: directory, selecting: wednesday)
             expect(state.weekTotal == 4, "expected 4 hours across the week, got \(state.weekTotal)")
             expect(state.weekBillableTotal == 2.5, "expected 2.5 billable hours, got \(state.weekBillableTotal)")
+        }
+    }
+
+    await test("weekly totals count the Sunday before and the Saturday after") {
+        try await withTemporaryDirectory { directory in
+            let wednesday = calendar.date(from: DateComponents(year: 2025, month: 8, day: 6))!
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(name: "2025-08-02")!, hours: 8, project: 10, task: 100),
+                entry(id: 2, day: Day(name: "2025-08-03")!, hours: 1, project: 10, task: 100, billable: true),
+                entry(id: 3, day: Day(name: "2025-08-06")!, hours: 2, project: 10, task: 100),
+                entry(id: 4, day: Day(name: "2025-08-09")!, hours: 0.5, project: 10, task: 100, billable: true),
+                entry(id: 5, day: Day(name: "2025-08-10")!, hours: 8, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory, selecting: wednesday)
+            expect(state.weekTotal == 3.5, "expected 3.5 hours, got \(state.weekTotal)")
+            expect(state.weekBillableTotal == 1.5, "expected 1.5 billable hours, got \(state.weekBillableTotal)")
         }
     }
 
