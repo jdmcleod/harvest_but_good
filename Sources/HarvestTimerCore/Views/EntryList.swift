@@ -3,10 +3,10 @@ import SwiftUI
 struct EntryList: View {
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
+    @Environment(WindowCommands.self) private var commands
     /// The footer's only route to the goal settings, the day tabs no longer
     /// offering one.
     let openSettings: () -> Void
-    @State private var showingStartTimer = false
 
     /// A day gone by gets an entry to fill in rather than a running timer, so
     /// the button says which one it is.
@@ -15,6 +15,7 @@ struct EntryList: View {
     var body: some View {
         let entries = state.entries(forDay: state.selectedDay)
         let counts = state.startCounts(forDay: state.selectedDay)
+        @Bindable var commands = commands
 
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -22,7 +23,7 @@ struct EntryList: View {
                 WeekTotalCard(title: "Billable", hours: state.weekBillableTotal)
                 Spacer()
                 Button {
-                    showingStartTimer = true
+                    commands.showingStartTimer = true
                 } label: {
                     Label(addLabel, systemImage: state.isViewingToday ? "play.circle" : "plus.circle")
                         .font(.callout)
@@ -33,8 +34,8 @@ struct EntryList: View {
                 .pointingCursor()
                 .help(
                     state.isViewingToday
-                        ? "Start a timer for any project"
-                        : "Add an entry to this day for any project"
+                        ? "Start a timer for any project (⌘N)"
+                        : "Add an entry to this day for any project (⌘N)"
                 )
             }
             .padding(.horizontal, 10)
@@ -63,6 +64,12 @@ struct EntryList: View {
                         proxy.scrollTo(entryId)
                     }
                 }
+                .onChange(of: commands.entryRequest) { _, request in
+                    guard let request else { return }
+                    withAnimation {
+                        proxy.scrollTo(request.entryId)
+                    }
+                }
             }
 
             GoalFooter(openSettings: openSettings)
@@ -72,7 +79,7 @@ struct EntryList: View {
         .onTapGesture {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
-        .sheet(isPresented: $showingStartTimer) {
+        .sheet(isPresented: $commands.showingStartTimer) {
             ProjectTaskPickerSheet(
                 title: addLabel,
                 actionLabel: addLabel,
@@ -80,7 +87,7 @@ struct EntryList: View {
                 showsFavoriteToggle: true
             ) { assignment, task, notes in
                 Task {
-                    await state.addEntry(projectId: assignment.project.id, taskId: task.id, notes: notes)
+                    await commands.start(projectId: assignment.project.id, taskId: task.id, notes: notes)
                 }
             }
         }
@@ -118,6 +125,7 @@ private struct WeekTotalCard: View {
 private struct EntryCard: View {
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var state
+    @Environment(WindowCommands.self) private var commands
     @Environment(\.openURL) private var openURL
     let entry: TimeEntry
     let startCount: Int
@@ -218,7 +226,10 @@ private struct EntryCard: View {
                             .fill(Color.primary.opacity(notesFocused ? 0.06 : 0.035))
                     )
                     .focused($notesFocused)
-                    .onSubmit { save() }
+                    // Leaving the box hands the keys back to the window, so
+                    // Space or a favorite's number works straight after.
+                    .onSubmit { resignNotes() }
+                    .onExitCommand { resignNotes() }
                     .onChange(of: notesFocused) { _, focused in
                         if !focused { save() }
                     }
@@ -234,7 +245,7 @@ private struct EntryCard: View {
             }
 
             Button {
-                Task { await state.toggle(entry) }
+                Task { await commands.toggle(entry) }
             } label: {
                 Image(systemName: entry.isRunning ? "stop.circle.fill" : "play.circle.fill")
                     .font(.system(size: 34))
@@ -247,6 +258,8 @@ private struct EntryCard: View {
         .onDisappear {
             if notesFocused { save() }
         }
+        .onAppear { handle(commands.entryRequest) }
+        .onChange(of: commands.entryRequest) { _, request in handle(request) }
         .padding(10)
         // The gesture rides the background so the notes field keeps its own
         // double-click, the one that selects a word.
@@ -332,6 +345,25 @@ private struct EntryCard: View {
 
     private func save() {
         Task { await state.saveNotes(entry, notes: notes) }
+    }
+
+    private func resignNotes() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+
+    private func handle(_ request: EntryRequest?) {
+        guard let request, request.entryId == entry.id else { return }
+        commands.entryRequest = nil
+        switch request.kind {
+        case .notes:
+            // A beat late: a start often lands while a sheet is still
+            // handing the window back, and focus set before then is lost.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { notesFocused = true }
+        case .editHours: beginHoursEdit()
+        case .changeProjectTask: editingProjectTask = true
+        case .moveTime: movingTime = true
+        case .delete: confirmingDelete = true
+        }
     }
 
     private func beginHoursEdit() {
