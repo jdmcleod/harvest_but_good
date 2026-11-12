@@ -332,6 +332,60 @@ func runAppStateTests() async {
         }
     }
 
+    await test("starting a past day's entry opens a new one on today with its notes") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(yesterday), hours: 1, project: 10, task: 100, notes: "standup"),
+            ])
+            let state = await syncedState(fake, directory: directory, selecting: yesterday)
+
+            await state.toggle(state.entry(withId: 1)!)
+            expect(!fake.calls.contains("restart(1)"), "the past day's entry should be left alone")
+            expect(fake.entry(1)?.isRunning == false, "the past day's entry should not be running")
+            expect(fake.runningEntry?.spentDate == Day(.now), "the running entry should be on today")
+            expect(fake.runningEntry?.project.id == 10, "the new entry should keep the project")
+            expect(fake.runningEntry?.task.id == 100, "the new entry should keep the task")
+            expect(fake.runningEntry?.notes == "standup", "the new entry should keep the notes")
+        }
+    }
+
+    await test("starting a past day's entry does not resume today's matching entry") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(yesterday), hours: 1, project: 10, task: 100, notes: "standup"),
+                entry(id: 2, day: Day(.now), hours: 1, project: 10, task: 100, notes: "standup"),
+            ])
+            let state = await syncedState(fake, directory: directory, selecting: yesterday)
+
+            await state.toggle(state.entry(withId: 1)!)
+            expect(!fake.calls.contains("restart(2)"), "today's matching entry should be left alone")
+            expect(
+                fake.runningEntry != nil && fake.runningEntry?.id != 1 && fake.runningEntry?.id != 2,
+                "a new entry should be the running one"
+            )
+            expect(state.entries(forDay: .now).count == 2, "today should show both entries")
+        }
+    }
+
+    await test("starting a past day's entry jumps the view to today") {
+        try await withTemporaryDirectory { directory in
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+            let fake = FakeHarvest(entries: [
+                entry(id: 1, day: Day(yesterday), hours: 1, project: 10, task: 100),
+            ])
+            let state = await syncedState(fake, directory: directory, selecting: yesterday)
+
+            await state.toggle(state.entry(withId: 1)!)
+            expect(state.isViewingToday, "the view should move to today")
+            expect(
+                state.entries(forDay: state.selectedDay).contains { $0.id == state.runningEntry?.id },
+                "the running entry should be in the list being shown"
+            )
+        }
+    }
+
     await test("start counts come from the app's own starts") {
         try await withTemporaryDirectory { directory in
             let today = Day(.now)
