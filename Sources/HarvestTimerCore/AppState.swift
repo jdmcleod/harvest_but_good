@@ -613,18 +613,44 @@ public final class AppState {
                     notes: notes
                 )
             }
-            eventLog.append(
-                TimerEvent(entryId: entry.id, action: .start, timestamp: .now, projectId: entry.project.id)
-            )
-            apply(entry)
-            await sync()
-            apply(entry)
+            await timerStarted(on: entry)
         }
         await loadProjectBudgets(force: true)
     }
 
+    /// A timer belongs on today, so starting a stopped entry from another day
+    /// opens a copy of it on today rather than running the clock on a day
+    /// gone by. The view follows, so the copied notes can be edited.
+    private func startCopyToday(of entry: TimeEntry) async {
+        await perform { api in
+            recordStopForRunningEntry()
+            let copy = try await api.startTimer(
+                projectId: entry.project.id,
+                taskId: entry.task.id,
+                spentDate: Day(.now),
+                notes: entry.notes ?? ""
+            )
+            selectedDay = .now
+            await timerStarted(on: copy)
+        }
+        await loadProjectBudgets(force: true)
+    }
+
+    private func timerStarted(on entry: TimeEntry) async {
+        eventLog.append(
+            TimerEvent(entryId: entry.id, action: .start, timestamp: .now, projectId: entry.project.id)
+        )
+        apply(entry)
+        await sync()
+        apply(entry)
+    }
+
     public func toggle(_ entry: TimeEntry) async {
         let current = currentVersion(of: entry)
+        guard current.isRunning || current.spentDate == Day(.now) else {
+            await startCopyToday(of: current)
+            return
+        }
         await perform { api in
             let updated: TimeEntry
             if current.isRunning {
